@@ -20,6 +20,11 @@ srw --help
 srw -c config.yaml plan
 ```
 
+If editable installs are not available (for example in air-gapped environments),
+run `./srw ...` from the repository root or add the repo directory to your PATH.
+The `srw` shim bootstraps `src/` onto `PYTHONPATH` so the CLI works without an
+editable install.
+
 The CLI requires a configuration YAML file that declares providers, models,
 and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
 tasks once a config is available, or `srw replay` to inspect planning logs.

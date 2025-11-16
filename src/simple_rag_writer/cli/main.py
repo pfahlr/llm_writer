@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.traceback import install as install_rich_traceback
 
@@ -73,6 +74,16 @@ def build_parser() -> argparse.ArgumentParser:
   return parser
 
 
+def _load_dotenv_files(config_path: Path | None = None) -> None:
+  """Load default .env plus the config directory's .env if present."""
+  load_dotenv(override=False)
+  if config_path is None:
+    return
+  env_path = config_path.parent / ".env"
+  if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=False)
+
+
 def main(argv: list[str] | None = None) -> int:
   if argv is None:
     argv = sys.argv[1:]
@@ -81,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
   args = parser.parse_args(argv)
 
   cfg_path = Path(args.config)
+  _load_dotenv_files(cfg_path)
   if not cfg_path.exists():
     console.print(f"[red]Config not found:[/red] {cfg_path}")
     return 1

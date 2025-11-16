@@ -1,6 +1,7 @@
 # Core runtime dependencies
 pydantic
 PyYAML
+python-dotenv
 rich
 litellm
 

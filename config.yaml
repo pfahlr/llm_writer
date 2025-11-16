@@ -1,0 +1,227 @@
+# rag_writer-lite model + provider config
+version: 0.1
+
+# Change this to whatever you want as your global default
+default_model: or-mistral-small-3.2-24b
+
+providers:
+  openrouter:
+    type: openrouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+
+models:
+  # --- Mistral ---
+
+  - id: or-mistral-small-3.1-24b
+    label: "Mistral Small 3.1 24B"
+    provider: openrouter
+    litellm_model: "openrouter/mistralai/mistral-small-3.1-24b-instruct"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["mistral", "general", "planning"]
+
+  - id: or-mistral-small-3.2-24b
+    label: "Mistral Small 3.2 24B"
+    provider: openrouter
+    litellm_model: "openrouter/mistralai/mistral-small-3.2-24b-instruct"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["mistral", "general", "planning"]
+
+  # --- OpenAI OSS ---
+
+  - id: or-gpt-oss-20b
+    label: "OpenAI GPT-OSS 20B"
+    provider: openrouter
+    litellm_model: "openrouter/openai/gpt-oss-20b"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.15
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["openai-oss", "general", "reasoning"]
+
+  # --- Tongyi / Alibaba ---
+
+  - id: or-tongyi-deepresearch-30b-a3b
+    label: "Tongyi DeepResearch 30B A3B"
+    provider: openrouter
+    litellm_model: "openrouter/alibaba/tongyi-deepresearch-30b-a3b"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["reasoning", "research", "analysis"]
+
+  # --- Qwen3 30B ---
+
+  - id: or-qwen3-30b-a3b
+    label: "Qwen3 30B A3B"
+    provider: openrouter
+    litellm_model: "openrouter/qwen/qwen3-30b-a3b"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["qwen3", "reasoning", "general"]
+
+  # --- ArliAI / QwQ ---
+
+  - id: or-qwq-32b-rpr-v1
+    label: "ArliAI QwQ 32B RpR v1"
+    provider: openrouter
+    litellm_model: "openrouter/arliai/qwq-32b-arliai-rpr-v1"
+    max_context_tokens: 32768
+    default_params:
+      temperature: 0.3
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["roleplay", "creative", "general"]
+
+  # --- Qwen2.5 VL ---
+
+  - id: or-qwen2_5-vl-32b-instruct
+    label: "Qwen2.5 VL 32B Instruct"
+    provider: openrouter
+    litellm_model: "openrouter/qwen/qwen2.5-vl-32b-instruct"
+    max_context_tokens: 65536
+    default_params:
+      temperature: 0.25
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["vision", "multimodal", "general"]
+
+  # --- DeepSeek V3 & V3.1 ---
+
+  - id: or-deepseek-v3-0324
+    label: "DeepSeek V3 0324"
+    provider: openrouter
+    litellm_model: "openrouter/deepseek/deepseek-chat-v3-0324"
+    max_context_tokens: 128000
+    default_params:
+      temperature: 0.15
+      top_p: 0.9
+      max_tokens: 4096
+    tags: ["deepseek", "reasoning", "general"]
+
+  - id: or-deepseek-v3_1
+    label: "DeepSeek V3.1"
+    provider: openrouter
+    litellm_model: "openrouter/deepseek/deepseek-chat-v3.1"
+    max_context_tokens: 128000
+    default_params:
+      temperature: 0.15
+      top_p: 0.9
+      max_tokens: 4096
+    tags: ["deepseek", "reasoning", "long-context"]
+
+  # --- Gemma 3 27B ---
+
+  - id: or-gemma-3-27b
+    label: "Gemma 3 27B"
+    provider: openrouter
+    litellm_model: "openrouter/google/gemma-3-27b-it"
+    max_context_tokens: 128000
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["gemma3", "general", "multilingual"]
+
+  # --- Z.AI GLM 4.5 Air ---
+
+  - id: or-glm-4_5-air
+    label: "GLM 4.5 Air"
+    provider: openrouter
+    litellm_model: "openrouter/z-ai/glm-4.5-air"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["glm", "reasoning", "agentic"]
+
+  # --- TNG DeepSeek Chimera Models ---
+
+  - id: or-deepseek-r1t-chimera
+    label: "DeepSeek R1T Chimera"
+    provider: openrouter
+    litellm_model: "openrouter/tngtech/deepseek-r1t-chimera"
+    max_context_tokens: 164000
+    default_params:
+      temperature: 0.15
+      top_p: 0.9
+      max_tokens: 4096
+    tags: ["deepseek", "chimera", "reasoning"]
+
+  - id: or-deepseek-r1t2-chimera
+    label: "DeepSeek R1T2 Chimera"
+    provider: openrouter
+    litellm_model: "openrouter/tngtech/deepseek-r1t2-chimera"
+    max_context_tokens: 164000
+    default_params:
+      temperature: 0.15
+      top_p: 0.9
+      max_tokens: 4096
+    tags: ["deepseek", "chimera", "reasoning", "fast"]
+
+  # --- MoonshotAI Kimi K2 0711 ---
+
+  - id: or-kimi-k2
+    label: "Kimi K2 0711"
+    provider: openrouter
+    litellm_model: "openrouter/moonshotai/kimi-k2"
+    max_context_tokens: 128000
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["kimi-k2", "agentic", "coding"]
+
+  # --- Qwen3 235B A22B ---
+
+  - id: or-qwen3-235b-a22b
+    label: "Qwen3 235B A22B"
+    provider: openrouter
+    litellm_model: "openrouter/qwen/qwen3-235b-a22b"
+    max_context_tokens: 131072
+    default_params:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 4096
+    tags: ["qwen3", "reasoning", "long-context"]
+
+  # --- Qwen3 Coder 480B A35B ---
+
+  - id: or-qwen3-coder-480b-a35b
+    label: "Qwen3 Coder 480B A35B"
+    provider: openrouter
+    litellm_model: "openrouter/qwen/qwen3-coder"
+    max_context_tokens: 262144
+    default_params:
+      temperature: 0.1
+      top_p: 0.9
+      max_tokens: 4096
+    tags: ["qwen3", "coder", "agentic", "coding"]
+
+  # --- Venice: Uncensored ---
+
+  - id: or-venice-uncensored
+    label: "Venice: Uncensored"
+    provider: openrouter
+    litellm_model: "openrouter/venice/uncensored"
+    max_context_tokens: 32768
+    default_params:
+      temperature: 0.4
+      top_p: 0.98
+      max_tokens: 4096
+    tags: ["venice", "uncensored", "creative"]
