@@ -286,8 +286,10 @@ def test_complete_handles_mcp_tool_calls(monkeypatch):
 
 def test_complete_handles_textual_tool_calls(monkeypatch):
   responses: list[str] = []
+  calls: List[Dict[str, Any]] = []
 
   def fake_completion(*, messages, **kwargs):
+    calls.append({"messages": messages})
     responses.append(messages[-1]["content"])
     if len(responses) == 1:
       return SimpleNamespace(
@@ -352,3 +354,7 @@ def test_complete_handles_textual_tool_calls(monkeypatch):
   events = registry.pop_tool_events()
   assert events
   assert "notes:search" in events[0]
+  last_textual = calls[-1]["messages"][-1]
+  assert last_textual["role"] == "assistant"
+  assert "TOOL_RESULT call_mcp_tool notes:search" in last_textual["content"]
+  assert "{'" not in last_textual["content"]

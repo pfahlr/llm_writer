@@ -11,6 +11,7 @@ except ImportError:  # pragma: no cover - only triggered when dependency missing
 
 from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
 from simple_rag_writer.mcp.client import McpClient
+from simple_rag_writer.mcp.message_formatting import format_mcp_result_for_llm
 from simple_rag_writer.mcp.normalization import normalize_payload
 from simple_rag_writer.mcp.types import McpToolResult
 from .params import merge_generation_params
@@ -342,19 +343,11 @@ class ModelRegistry:
     tool_name: str,
     params: Dict[str, Any],
   ) -> Dict[str, Any]:
-    header = f"Result from {server_id}:{tool_name}"
-    items = normalize_payload(result.payload)
-    lines: List[str] = [header]
-    for item in items:
-      lines.append(item.title or "Item")
-      body_text = (item.body or item.snippet or "").strip()
-      if body_text:
-        lines.append(body_text)
+    formatted = format_mcp_result_for_llm(server_id, tool_name, result.payload)
+    content = f"TOOL_RESULT call_mcp_tool {server_id}:{tool_name}\n\n{formatted}"
     return {
-      "role": "tool",
-      "name": "call_mcp_tool",
-      "tool_call_id": f"{server_id}:{tool_name}",
-      "content": "\n".join(lines).strip(),
+      "role": "assistant",
+      "content": content.strip(),
     }
 
   def _build_mcp_tool_instruction(self, tool_metadata: Dict[str, List[Dict[str, Any]]]) -> str:
@@ -414,28 +407,12 @@ class ModelRegistry:
     return payload
 
   def _render_mcp_tool_result(self, result: McpToolResult, tool_call: Any) -> Dict[str, Any]:
-    header = f"Result from {result.server_id}:{result.tool_name}"
-    items = normalize_payload(result.payload)
-    sections: List[str] = []
-    for item in items:
-      lines: List[str] = []
-      if item.title:
-        lines.append(item.title)
-      body_text = (item.body or item.snippet or "").strip()
-      if body_text:
-        lines.append(body_text)
-      if item.url:
-        lines.append(f"URL: {item.url}")
-      if item.metadata:
-        lines.append(f"Metadata: {item.metadata}")
-      block = "\n".join(line for line in lines if line).strip()
-      if block:
-        sections.append(block)
-    if not sections:
-      sections.append("No textual data was returned.")
+    content = format_mcp_result_for_llm(result.server_id, result.tool_name, result.payload)
+    if not content.strip():
+      content = f"Result from {result.server_id}:{result.tool_name}"
     return {
       "role": "tool",
       "name": getattr(tool_call.function, "name", "call_mcp_tool"),
       "tool_call_id": getattr(tool_call, "id", None),
-      "content": "\n\n".join([header, *sections]).strip(),
+      "content": content.strip(),
     }
