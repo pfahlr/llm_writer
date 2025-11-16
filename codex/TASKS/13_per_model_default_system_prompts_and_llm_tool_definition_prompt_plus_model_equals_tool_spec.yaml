@@ -1,0 +1,359 @@
+id: 12
+filename: 13_per_model_default_system_prompts_and_llm_tool_definition_prompt_plus_model_equals_tool_spec.yaml 
+title: Add per-model default system prompts, introduce a prompts.yaml file for user-defined task-specific system prompts
+project: llm_writer
+spec_version: 0.2.0
+
+summary: >
+  Add per-model default system prompts, introduce prompts.yaml for user-defined,
+  task-specific system prompts (CRAFT-aligned), and update llm_tool so each "skill"
+  is a combination of a model_id and prompt_id. Adds optional prompt templates,
+  tagging, validation, and improved tool result handling.
+
+targets:
+  - config.yaml
+  - prompts.yaml
+  - srw_llm_tool.py
+  - src/simple_rag_writer/config.py
+  - src/simple_rag_writer/models.py
+
+changes:
+  - id: config-add-system-prompt-per-model
+    description: >
+      Extend model definitions in config.yaml so each model can specify
+      a default system prompt. Add an llm_tool section with skills as
+      (model_id, prompt_id) pairs.
+    file_edits:
+      - path: config.yaml
+        kind: yaml_structure
+        actions:
+          - op: ensure_keys
+            keys:
+              - models
+          - op: ensure_model_schema
+            schema:
+              type: list
+              items:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+                  provider: { type: string }
+                  model: { type: string }
+                  system_prompt:
+                    type: string
+                    description: |
+                      Optional default system prompt if no skill-specific prompt is used.  Multiline YAML string is allowed (| literal block).
+
+          - op: ensure_llm_tool_section
+            description: >
+              Ensure there is an llm_tool section with a skills list that
+              will become (model_id, prompt_id) pairs.
+            ensure:
+              llm_tool:
+                skills: []
+
+  - id: prompts-yaml-create
+    description: >
+      Create prompts.yaml for reusable, user-defined system prompts keyed by prompt_id,
+      with CRAFT-aligned metadata and optional template support.
+    file_edits:
+      - path: prompts.yaml
+        kind: yaml_new_file
+        actions:
+          - op: create_with_schema
+            contents:
+              spec_version: 1.0.0
+              validate_prompts: true
+              prompt_guidelines_url: https://github.com/pfahlr/llm_writer/docs/prompt-guidelines.md
+              prompts:
+                type: list
+                items:
+                  type: object
+                  required: [id, label, system_prompt]
+                  properties:
+                    id:  
+                      type: string 
+                      description: >
+                       Unique identifier, referenced by skills.prompt_id
+                       (e.g. "essay_draft", "blog_outline", "copy_edit").
+                    label:  
+                        type: string 
+                        description:  >
+                          Human-friendly name for UI / logging.
+                    
+                    description: 
+                        type: string 
+                        description: >
+                          Short explanation of what this prompt is for.
+                    tags:
+                      type: list
+                      items:  
+                        type: string 
+                    category:  
+                        type: string 
+                        description: >
+                          Optional category (e.g. "drafting", "editing",
+                          "summarization", "translation").
+                    model_hint: 
+                        type: string 
+                         description: >
+                          Optional suggested model_id; skills may override.
+                    system_prompt:
+                      type: string
+                      format_hint: |
+                        Use the CRAFT structure:
+                        - Context
+                        - Role
+                        - Action
+                        - Format
+                        - Target Audience
+                        description: >
+                          Full system prompt text; use YAML literal block style.
+                    template_vars:
+                      type: list
+                      items: { type: string }
+
+              example:
+                prompts:
+                  - id: essay_drafter_a
+                    label: Essay Drafting Assistant
+                    description: >
+                      Writes structured essays with intro, body, and conclusion.
+                    tags: [essay, drafting, academic]
+                    system_prompt: |
+                      You are a writing assistant who helps users craft structured essays.
+                      Write a clear introduction, body sections, and a conclusion.
+                      Assume a general academic audience.
+                  - id: creative_storyteller_a
+                    label: Creative Story Generator
+                    description: Generate imaginative short stories for kids.
+                    tags: [creative, storytelling, children]
+                    template_vars: [character_name, setting]
+                    system_prompt: |
+                      You are a storyteller.
+                      Tell a short, magical story about {{character_name}} in {{setting}}.
+                      Use simple, vivid language for young readers.
+                 - id: generic_writer_a
+                    label: Generic Writing Assistant
+                    category: general
+                    description: >
+                      High-level assistant for general writing and rewriting tasks.
+                    system_prompt: |
+                      You are a general-purpose writing assistant.
+                      Help the user draft, rewrite, and clarify text while
+                      preserving their intent and voice.
+
+  - id: llm-tool-skills-as-model-and-prompt
+    description: >
+      Skills are now defined as combinations of model_id + prompt_id.      
+      Make each llm_tool skill an explicit combination of a model_id
+      (from config.yaml models) and a prompt_id (from prompts.yaml prompts).
+    file_edits:
+      - path: config.yaml
+        kind: yaml_structure
+        actions:
+          - op: redefine_skills_schema
+            description: >
+              Rewrite llm_tool.skills entries (or create them if missing) to
+              use model_id + prompt_id instead of a raw model or inline prompt.
+            schema:
+              llm_tool:
+                skills:
+                  type: list
+                  items:
+                    type: object
+                    required: [id, label, model_id, prompt_id]
+                    properties:
+                      id:
+                        type: string
+                        description: >
+                          Unique skill identifier used in the MCP tool registry (e.g. "essay_drafter", "blog_outliner").
+                      label:
+                        type: string
+                        description: >
+                          Friendly name for the skill.
+                      description:
+                        type: string
+                        description: >
+                          Short description of what the skill does.
+                      model_id:
+                        type: string
+                        description: >
+                          References models[*].id in config.yaml.
+                      prompt_id:
+                        type: string
+                        description: >
+                          References prompts[*].id in prompts.yaml.
+                      max_output_tokens:
+                        type: integer
+                        description: >
+                          Optional cap for this skill; overrides any model default.
+                      temperature:
+                        type: number
+                        description: >
+                          Optional per-skill temperature override.
+            example:
+              llm_tool:
+                skills:
+                  - id: essay_drafter_a
+                    label: Essay Drafter
+                    description: "Drafts multi-section essays from notes or a topic."
+                    model_id: or-gemma-3-27b
+                    prompt_id: essay_draft
+                    max_output_tokens: 2000
+                    temperature: 0.7
+                  - id: generic_writer_a
+                    label: Generic Writer
+                    description: "General writing / rewriting assistant."
+                    model_id: or-gpt-oss-20b
+                    prompt_id: generic_writer
+                    max_output_tokens: 1200
+                    temperature: 0.4
+                  - id: creative_storyteller_a
+                    label: Generic Writer
+                    description: "Creative writing / fiction."
+                    model_id: or-gpt-oss-20b
+                    prompt_id: creative_storyteller
+                    max_output_tokens: 1200
+                    temperature: 0.4
+                    
+
+  - id: python-config-layer-load-prompts-and-skills
+    description: >
+      Update Python config/models so they are aware of prompts.yaml and the new skill structure. Add dataclasses for models, prompts, and skills; load both config.yaml and prompts.yaml. 
+    file_edits:
+      - path: src/simple_rag_writer/config.py
+        kind: python
+        actions:
+          - op: ensure_yaml_loading
+            description: >
+              Add logic to load prompts.yaml alongside config.yaml.
+            steps:
+              - Import yaml loader (e.g. from ruamel.yaml or PyYAML).
+              - Add a function load_prompts_config(path: str = "prompts.yaml")
+                that returns a dict with key "prompts".
+          - op: define_config_classes
+            schema:
+              ModelConfig:
+                fields: [id, provider, model, system_prompt?]
+              PromptConfig:
+                fields: [id, label, description?, tags?, category?, model_hint?, system_prompt, template_vars?]
+              SkillConfig:
+                fields: [id, label, description?, model_id, prompt_id, max_output_tokens?, temperature?]
+          - op: wire_config_together
+            description: >
+              Provide helper functions that resolve a SkillConfig into a
+              concrete (model, system_prompt, generation_params) tuple.
+          - op: load_configs
+            description: Load config.yaml and prompts.yaml
+            helpers:
+              - load_models_config()
+              - load_prompts_config()
+              - load_skills_config()
+          - op: resolution_helpers
+            helpers:
+              - resolve_model(model_id)
+              - resolve_prompt(prompt_id)
+              - resolve_skill(skill_id) ->
+                  { model: ModelConfig, prompt: PromptConfig, params: dict }
+        - path: src/simple_rag_writer/models.py
+            kind: python
+            actions:
+            - op: adjust_model_factory_for_skills
+                description: >
+                If there is a model factory / client construction code, update it
+                so that it accepts a SkillConfig or resolved (model, prompt)
+                instead of just a raw model string.
+                notes:
+                - Ensure there is a place where the final system_prompt string is
+                    passed through to the underlying LLM client as the system role.
+                - Prefer to resolve prompts at the "skill selection" layer so
+                    runtime calls only need skill_id + user input.
+
+- id: mcp-llm-tool-plumb-skill-prompts
+    description: >
+      Update srw_llm_tool.py so that each MCP tool "skill" uses the
+      resolved (model, prompt) data rather than a hardcoded model or prompt.
+    file_edits:
+      - path: srw_llm_tool.py
+        kind: python
+        actions:
+          - op: import_config_resolvers
+            description: >
+              Import resolve_skill / resolve_model / resolve_prompt helpers
+              from src.simple_rag_writer.config (or similar config module).
+          - op: refactor_skill_registration
+            description: >
+              Where the MCP tool currently registers skills, change it to:
+              1) Load config.yaml and prompts.yaml.
+              2) Build a dict[skill_id, SkillConfig].
+              3) For each skill, resolve model + prompt, then construct the
+                 underlying LLM client / call handler accordingly.
+          - op: apply_system_prompt
+            description: >
+              Ensure that the resolved system_prompt is used as the "system" role
+              message for the chat/completions call for that skill.
+            behavior:
+              - If a skill has prompt_id:
+                  use prompts[prompt_id].system_prompt.
+              - Else if its model has system_prompt:
+                  use models[model_id].system_prompt.
+              - Else:
+                  use a generic built-in fallback system prompt.
+  - id: mcp-tool-result-injection-strategy
+    description: >
+      Improve tool-call JSON handling after TOOL_RESULT.
+    file_edits:
+      - path: srw_llm_tool.py
+        kind: python
+        actions:
+          - op: inject_tool_result_as_user_message
+            description: >
+              After tool result, inject a `user` role message like:
+              "Here are the results from arxiv:search_papers. Using these, continue..."
+              Optionally summarize JSON.
+          - op: truncate_or_summarize_tool_json
+            config_hook:
+              truncate_token_limit: 6000
+              summarize_json: true
+              summary_template: |
+                Tool result summary:
+                {% for paper in papers %}
+                - {{paper.id}}: "{{paper.title}}", {{paper.comment}}
+                {% endfor %}
+
+migration:
+  order:
+    - config-add-system-prompt-per-model
+    - prompts-yaml-create
+    - llm-tool-skills-as-model-and-prompt
+    - python-config-layer-load-prompts-and-skills
+    - mcp-llm-tool-plumb-skill-prompts
+    - mcp-tool-result-injection-strategy
+  notes: >
+     After applying these changes, run your existing test suite (if any),
+    plus a manual smoke test that calls several llm_tool skills and confirms
+    that different skills actually use different system prompts and models.
+
+
+tooling_notes:
+  validation:
+    - name: validate-prompts
+      description: >
+        CLI or pre-commit check to ensure prompts follow CRAFT principles,
+        contain no syntax errors, and are < N tokens.
+    - name: resolve-skill <skill_id>
+      description: >
+        Show full model, prompt, and sample system message for a given skill.
+  yaml_libraries:
+    - name: ruamel.yaml
+      comment: Use if editing YAML in-place and preserving comments.
+    - name: PyYAML
+      comment: Use for standard load/dump.
+  prompt_guidelines:
+    location: docs/prompt-guidelines.md
+    includes:
+      - CRAFT checklist
+      - Prompt examples
+      - Template usage
