@@ -358,3 +358,74 @@ def test_complete_handles_textual_tool_calls(monkeypatch):
   assert last_textual["role"] == "assistant"
   assert "TOOL_RESULT call_mcp_tool notes:search" in last_textual["content"]
   assert "{'" not in last_textual["content"]
+
+
+def test_complete_handles_bracketed_textual_tool_calls(monkeypatch):
+  responses: list[str] = []
+  calls: List[Dict[str, Any]] = []
+
+  def fake_completion(*, messages, **kwargs):
+    calls.append({"messages": messages})
+    responses.append(messages[-1]["content"])
+    if len(responses) == 1:
+      return SimpleNamespace(
+        choices=[
+          SimpleNamespace(
+            message=SimpleNamespace(
+              content='[TOOL_CALLS]call_mcp_tool{"server":"notes","tool":"search","params":{"query":"topic"}}',
+              tool_calls=[],
+            )
+          )
+        ]
+      )
+    return SimpleNamespace(
+      choices=[
+        SimpleNamespace(message=SimpleNamespace(content="final response", tool_calls=[]))
+      ]
+    )
+
+  monkeypatch.setattr(
+    "simple_rag_writer.llm.registry.litellm",
+    SimpleNamespace(completion=fake_completion, BadRequestError=Exception),
+  )
+
+  cfg = AppConfig(
+    default_model="openrouter:default",
+    providers={
+      "openrouter": ProviderConfig(
+        type="openrouter",
+        api_key="dummy",
+        base_url="https://openrouter.ai/api/v1",
+      ),
+    },
+    models=[
+      ModelConfig(id="openrouter:default", provider="openrouter", model_name="router"),
+    ],
+    mcp_servers=[
+      McpServerConfig(id="notes", command=["notes-cmd"]),
+    ],
+  )
+  registry = ModelRegistry(cfg)
+
+  class FakeMcpClient:
+    def __init__(self) -> None:
+      self.calls: list[tuple[str, str, Dict[str, Any]]] = []
+
+    def list_tools(self, server: str):
+      return []
+
+    def call_tool(self, server: str, tool: str, params: Dict[str, Any]) -> McpToolResult:
+      self.calls.append((server, tool, params))
+      return McpToolResult(
+        server_id=server,
+        tool_name=tool,
+        payload=[{"title": "Doc", "body": "Body"}],
+      )
+
+  fake_client = FakeMcpClient()
+  result = registry.complete("Hello", mcp_client=fake_client)
+
+  assert fake_client.calls == [("notes", "search", {"query": "topic"})]
+  assert result == "final response"
+  events = registry.pop_tool_events()
+  assert events and "notes:search" in events[0]

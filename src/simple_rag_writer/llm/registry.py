@@ -303,8 +303,8 @@ class ModelRegistry:
     return supports
 
   def _extract_tool_command_from_text(self, text: str) -> Optional[Tuple[str, str, Dict[str, Any]]]:
-    marker = "CALL_MCP_TOOL"
-    idx = text.find(marker)
+    marker = "call_mcp_tool"
+    idx = text.lower().find(marker)
     if idx == -1:
       return None
     start = text.find("{", idx)
