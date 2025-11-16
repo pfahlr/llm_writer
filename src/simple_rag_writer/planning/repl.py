@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import shlex
 from functools import partial
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from simple_rag_writer.config import PromptsFile, PromptDefinition
 from simple_rag_writer.config.models import AppConfig
 from simple_rag_writer.llm.executor import LlmCompletionError, run_completion_with_feedback
 from simple_rag_writer.llm.registry import ModelRegistry
@@ -46,6 +47,7 @@ class PlanningRepl:
     model_registry: ModelRegistry,
     log_writer: PlanningLogWriter,
     mcp_client: Optional[McpClient] = None,
+    prompts: Optional[PromptsFile] = None,
   ) -> None:
     self._config = config
     self._registry = model_registry
@@ -58,6 +60,10 @@ class PlanningRepl:
     self._last_batch: Optional[_ResultBatch] = None
     self._mcp_query_history: List[str] = []
     self._turn_index = 0
+    prompt_library = prompts.prompts if prompts else {}
+    self._prompts: Dict[str, PromptDefinition] = dict(prompt_library)
+    self._selected_prompt_id: Optional[str] = None
+    self._selected_system_prompt: Optional[str] = None
 
   def run(self) -> None:
     console.print(
@@ -65,6 +71,7 @@ class PlanningRepl:
         "Planning mode. Type to chat.\n"
         "/models list models, /model <id> switches.\n"
         "/sources shows MCP servers, /use and /url fetch references.\n"
+        "/prompts lists system prompts, /prompt <id|default> selects one.\n"
         "/inject adds selected references to context, /context inspects it, /quit exits.",
         title="Simple Rag Writer",
       )
@@ -103,6 +110,7 @@ class PlanningRepl:
           self._registry,
           prompt,
           mcp_client=self._mcp_client,
+          system_prompt=self._selected_system_prompt,
           max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
           on_attempt_failure=partial(
             self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
@@ -149,6 +157,12 @@ class PlanningRepl:
     if cmd == "/model":
       self._switch_model(args)
       return False
+    if cmd == "/prompts":
+      self._show_prompts()
+      return False
+    if cmd == "/prompt":
+      self._configure_prompt(args)
+      return False
     if cmd == "/sources":
       self._list_sources()
       return False
@@ -183,6 +197,54 @@ class PlanningRepl:
       console.print(f"Switched model to [bold]{mid}[/bold]")
     except KeyError:
       console.print(f"[red]Unknown model id:[/red] {mid}")
+
+  def _show_prompts(self) -> None:
+    if not self._prompts:
+      console.print("[yellow]No prompts configured. Add prompts.yaml to enable this feature.[/yellow]")
+      return
+    table = Table(title="System Prompts")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Label")
+    table.add_column("Tags")
+    table.add_column("Category")
+    for pid, prompt in sorted(self._prompts.items()):
+      tags = ", ".join(prompt.tags) if prompt.tags else "—"
+      category = prompt.category or "—"
+      table.add_row(pid, prompt.label or pid, tags or "—", category)
+    console.print(table)
+    status = (
+      f"Current: [bold]{self._selected_prompt_id}[/bold]"
+      if self._selected_prompt_id
+      else "Current: model default"
+    )
+    console.print(status)
+
+  def _configure_prompt(self, args: List[str]) -> None:
+    if not self._prompts:
+      console.print("[yellow]No prompts available.[/yellow]")
+      return
+    if not args:
+      if self._selected_prompt_id:
+        console.print(f"Using prompt [bold]{self._selected_prompt_id}[/bold].")
+      else:
+        console.print("Using model default system prompt.")
+      return
+    choice = args[0]
+    if choice.lower() in {"default", "clear", "none"}:
+      self._selected_prompt_id = None
+      self._selected_system_prompt = None
+      console.print("[green]Cleared custom prompt. Using model default.[/green]")
+      return
+    prompt = self._prompts.get(choice)
+    if not prompt:
+      console.print(f"[red]Unknown prompt id:[/red] {choice}")
+      return
+    if not prompt.system_prompt:
+      console.print(f"[yellow]Prompt '{choice}' has no system prompt text.[/yellow]")
+      return
+    self._selected_prompt_id = choice
+    self._selected_system_prompt = prompt.system_prompt.strip()
+    console.print(f"[green]Selected prompt[/green] [bold]{choice}[/bold]: {prompt.label}")
 
   def _list_sources(self) -> None:
     servers = self._config.mcp_servers

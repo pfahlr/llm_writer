@@ -66,5 +66,26 @@ uv tool install arxiv-mcp-server
 npm install -g deliberate-reasoning-engine
 ```
 
+### LLM Context 
+ - [cyberchitta/llm-context.py](https://github.com/cyberchitta/llm-context.py)
+
+#### Tools List
+
+#### Installation
+
+```bash
+uv tool install llm-context
+```
+ 
+### Memory Bank MCP 
+ - [movibe/memory-bank-mcp](https://github.com/movibe/memory-bank-mcp)
+
+#### Tools List
+ 
+#### Installation
+
+```bash
+npm install -g @movibe/memory-bank-mcp
+```
 
 

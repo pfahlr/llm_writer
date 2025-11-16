@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from rich.panel import Panel
 from rich.table import Table
 
+from simple_rag_writer.config import PromptDefinition, PromptsFile
 from simple_rag_writer.config.models import (
   AppConfig,
   McpServerConfig,
@@ -46,6 +47,7 @@ class _FakeModelRegistry:
     ]
     self.current_id = "writer"
     self.completions: List[str] = []
+    self.last_system_prompt: Optional[str] = None
 
   def list_models(self) -> List[_FakeModel]:
     return list(self.models)
@@ -64,6 +66,7 @@ class _FakeModelRegistry:
     system_prompt: Optional[str] = None,
   ) -> str:  # pragma: no cover - exercised via tests
     self.completions.append(prompt)
+    self.last_system_prompt = system_prompt
     return f"assistant-{len(self.completions)}"
   def pop_tool_events(self) -> List[str]:
     return []
@@ -144,11 +147,18 @@ def _make_repl(
   console_inputs: Optional[Sequence[str]] = None,
   config: Optional[AppConfig] = None,
   mcp_payload: Optional[List[Dict[str, str]]] = None,
+  prompts: Optional["PromptsFile"] = None,
 ) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
   registry = _FakeModelRegistry()
   log_writer = _FakePlanningLogWriter()
   fake_client = _FakeMcpClient(payload=mcp_payload)
-  repl = PlanningRepl(config or _make_config(), registry, log_writer, mcp_client=fake_client)
+  repl = PlanningRepl(
+    config or _make_config(),
+    registry,
+    log_writer,
+    mcp_client=fake_client,
+    prompts=prompts,
+  )
   fake_console = _FakeConsole(console_inputs)
   monkeypatch.setattr(repl_module, "console", fake_console)
   return repl, registry, log_writer, fake_console
@@ -162,6 +172,61 @@ def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
     "* writer (Writer Model)",
     "  editor (Editor Model)",
   ]
+
+
+def _make_sample_prompts() -> PromptsFile:
+  return PromptsFile(
+    spec_version="1.0.0",
+    validate_prompts=True,
+    prompt_guidelines_url=None,
+    prompts={
+      "outline": PromptDefinition(
+        id="outline",
+        label="Outline Architect",
+        description="Planner prompt",
+        tags=("planning",),
+        category="drafting",
+        model_hint=None,
+        system_prompt="Outline system prompt",
+        template_vars=(),
+      ),
+      "summary": PromptDefinition(
+        id="summary",
+        label="Summary Prompt",
+        description="Summaries",
+        tags=("summary",),
+        category="editing",
+        model_hint=None,
+        system_prompt="Summary system prompt",
+        template_vars=(),
+      ),
+    },
+  )
+
+
+def test_prompt_command_sets_system_prompt(monkeypatch) -> None:
+  prompts = _make_sample_prompts()
+  repl, registry, _, fake_console = _make_repl(
+    monkeypatch,
+    console_inputs=["/prompt outline", "Need plan", "/quit"],
+    prompts=prompts,
+  )
+
+  repl.run()
+
+  assert registry.last_system_prompt == "Outline system prompt"
+  assert any(
+    isinstance(entry, str) and "Selected prompt" in entry for entry in fake_console.printed
+  )
+
+
+def test_show_prompts_lists_available_entries(monkeypatch) -> None:
+  prompts = _make_sample_prompts()
+  repl, _, _, fake_console = _make_repl(monkeypatch, prompts=prompts)
+
+  repl._handle_command("/prompts")
+
+  assert any(isinstance(entry, Table) for entry in fake_console.printed)
 
 
 def test_handle_command_lists_sources(monkeypatch) -> None:
