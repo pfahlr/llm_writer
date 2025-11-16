@@ -9,9 +9,55 @@ providers:
     type: openrouter
     base_url: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
+  googleg:
+    type: google
+    base_url: https://generativelanguage.googleapis.com/v1beta/models/
+    api_key_env: GEMINI_API_KEY
 
 models:
   # --- Mistral ---
+  - id: gemini-2.5-pro
+    label: "Gemini 2.5 Pro"
+    system_prompt: | 
+      You are a detail oriented assistant that delivers outlines, and written content in a variety of subject areas
+    provider: google
+    litellm_model: "gemini/gemini-pro"
+    max_context_tokens: 1048576
+    default_params:
+      reasoning_effort: 'none'
+    tags: ["google", "gemini", "advanced"]
+
+  - id: gemini-1.5-pro
+    label: "Gemini 2.5 Pro"
+    system_prompt: |
+      You are a detail oriented assistant that delivers outlines, and written content in a variety of subject areas
+    provider: google
+    litellm_model: "gemini/gemini-1.5-pro"
+    max_context_tokens: 2000000
+    default_params:
+      reasoning_effort: 'none'
+      max_tokens: 1048576
+    tags: ["google", "gemini", "advanced"]
+
+ - id: gemini-2.0-flash
+    label: "Gemini 2.0 Flash"
+    litellm_model: "gemini/gemini-2.0-flash"
+    provider: google
+    max_context_tokens: 1048576
+    default_params:
+      reasoning_effort: 'none'
+      max_tokens: 1048576
+    tags: ["google", "gemini", "advanced"]
+
+  - id: gemini-2.0-flash-exp
+    label: "Gemini 2.0 Flash Experimental"
+    litellm_model: "gemini/gemini-2.0-flash-exp"
+    provider: google
+    max_context_tokens: 1048576
+    default_params:
+      reasoning_effort: 'none'
+      max_tokens: 1048576
+    tags: ["google", "gemini", "advanced"]
 
   - id: or-mistral-small-3.1-24b
     label: "Mistral Small 3.1 24B"
