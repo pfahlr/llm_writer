@@ -1,0 +1,2752 @@
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c4c-b030-75c3-a908-b41d92e92b20
+--------
+user
+Implement the functionality described in codex/TASKS/12_add_textual_source_browser_stub.yaml, then verify with any available tests.
+
+thinking
+**Preparing to read task instructions**
+exec
+bash -lc ls in /var/home/rick/Development/llm_writer succeeded in 39ms:
+AGENTS.md
+codex
+codex.toml
+pyproject.toml
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Reading task file**
+exec
+bash -lc "sed -n '1,200p' codex/TASKS/12_add_textual_source_browser_stub.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+id: 12
+filename: 12_add_textual_source_browser_stub.yaml
+title: Add Textual-based MCP source browser stub (experimental)
+description: >
+  Add a minimal Textual application stub that can be invoked separately
+  to browse MCP results and, in the future, integrate with planning mode.
+
+dependencies:
+  - 06
+
+goals:
+  - Provide a Textual app skeleton that can display a simple list of
+    NormalizedItems.
+  - Keep it optional and non-critical to core flows.
+
+artifacts:
+  - src/simple_rag_writer/mcp/source_browser_app.py
+  - tests/test_source_browser_stub.py
+
+steps:
+
+thinking
+**Planning test-driven development approach**
+exec
+bash -lc 'rg -n "NormalizedItem" -n src/simple_rag_writer -n tests -n' in /var/home/rick/Development/llm_writer succeeded in 45ms:
+tests/test_mcp_prompt_policy.py:12:from simple_rag_writer.mcp.types import NormalizedItem
+tests/test_mcp_prompt_policy.py:67:    NormalizedItem(body="AAAAA11111"),
+tests/test_mcp_prompt_policy.py:68:    NormalizedItem(body="BBBBB22222"),
+tests/test_mcp_prompt_policy.py:69:    NormalizedItem(body="CCCCC33333"),
+tests/test_mcp_prompt_policy.py:90:    NormalizedItem(title="Doc 1", body="Alpha body", url="https://example.com/a"),
+tests/test_mcp_prompt_policy.py:91:    NormalizedItem(title="Doc 2", body="Beta body"),
+src/simple_rag_writer/runner/run_tasks.py:14:from simple_rag_writer.mcp.types import NormalizedItem
+src/simple_rag_writer/runner/run_tasks.py:37:def _url_items(reference: UrlReference, text: str) -> List[NormalizedItem]:
+src/simple_rag_writer/runner/run_tasks.py:39:    NormalizedItem(
+src/simple_rag_writer/mcp/prompt_policy.py:7:from simple_rag_writer.mcp.types import NormalizedItem
+src/simple_rag_writer/mcp/prompt_policy.py:16:def _format_item(item: NormalizedItem) -> str:
+src/simple_rag_writer/mcp/prompt_policy.py:30:def _render_raw_blob(reference: ReferenceCommon, items: List[NormalizedItem], policy: RawCappedPolicy) -> Optional[str]:
+src/simple_rag_writer/mcp/prompt_policy.py:59:def _build_summary_prompt(reference: ReferenceCommon, items: List[NormalizedItem], policy: SummaryPolicy) -> str:
+src/simple_rag_writer/mcp/prompt_policy.py:82:  items: List[NormalizedItem],
+src/simple_rag_writer/mcp/prompt_policy.py:102:  items: List[NormalizedItem],
+src/simple_rag_writer/mcp/normalization.py:5:from .types import NormalizedItem
+src/simple_rag_writer/mcp/normalization.py:11:) -> List[NormalizedItem]:
+src/simple_rag_writer/mcp/normalization.py:12:  """Convert raw MCP payload into a list of NormalizedItem."""
+src/simple_rag_writer/mcp/normalization.py:13:  items: List[NormalizedItem] = []
+src/simple_rag_writer/mcp/normalization.py:16:    items.append(NormalizedItem(body=payload, type=item_type_hint))
+
+thinking
+**Checking types file**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/mcp/types.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, Field
+
+
+class McpToolResult(BaseModel):
+  server_id: str
+  tool_name: str
+  payload: Any
+
+
+class NormalizedItem(BaseModel):
+  id: Optional[str] = None
+  type: Optional[str] = None
+  title: Optional[str] = None
+  snippet: Optional[str] = None
+  body: Optional[str] = None
+  url: Optional[str] = None
+
+thinking
+**Planning test-driven development steps**
+Plan update
+  → Add tests for Textual source browser stub per task spec (failing first).
+  • Implement Textual source browser app skeleton using stub data to satisfy tests.
+  • Run pytest and ensure suite passes; adjust if needed.
+
+thinking
+**Inspecting dependencies for tests**
+exec
+bash -lc 'cat pyproject.toml' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-rag-writer"
+version = "0.0.1"
+description = "Simplified rag_writer-style tool with MCP and multi-provider LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.0",
+  "PyYAML>=6.0",
+  "rich>=13.0",
+  "litellm>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+
+thinking
+**Evaluating adding Textual dependency**
+
+I'm considering how to add the required Textual-based stub while handling the heavy dependency and possible offline environment. I’m thinking about implementing a module that tries to import Textual but gracefully falls back if it’s missing, to keep tests running without failing. There’s a lot to figure out around dependency management and test compatibility!
+exec
+bash -lc "python - <<'PY'
+import importlib
+print(importlib.util.find_spec('textual'))
+PY" in /var/home/rick/Development/llm_writer exited 1 in 60ms:
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+AttributeError: module 'importlib' has no attribute 'util'
+
+thinking
+**Resolving importlib attribute error**
+exec
+bash -lc "python - <<'PY'
+from importlib import util
+print('spec:', util.find_spec('textual'))
+PY" in /var/home/rick/Development/llm_writer succeeded in 97ms:
+spec: ModuleSpec(name='textual', loader=<_frozen_importlib_external.SourceFileLoader object at 0x7f4027d749e0>, origin='/var/home/rick/Development/llm_writer/venv/lib64/python3.13/site-packages/textual/__init__.py', submodule_search_locations=['/var/home/rick/Development/llm_writer/venv/lib64/python3.13/site-packages/textual'])
+
+thinking
+**Preparing test environment and style check**
+exec
+bash -lc "sed -n '1,200p' tests/test_mcp_prompt_policy.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from simple_rag_writer.config.models import (
+  AppConfig,
+  McpPromptPolicy,
+  ModelConfig,
+  ProviderConfig,
+  RawCappedPolicy,
+  SummaryPolicy,
+)
+from simple_rag_writer.mcp.prompt_policy import apply_prompt_policy
+from simple_rag_writer.mcp.types import NormalizedItem
+from simple_rag_writer.tasks.models import McpReference
+
+
+class FakeModelRegistry:
+  def __init__(self, response: str = "SUMMARY OUTPUT") -> None:
+    self.response = response
+    self.calls = []
+
+
+thinking
+**Designing Textual SourceBrowserApp with tests**
+
+I'm planning to implement a Textual-based source browser stub app showing a scrollable list of NormalizedItems using a simple DataTable UI. I'll create a new `SourceBrowserApp` class with default stub data and compose it with header, footer, and the table. Alongside, I’ll add TDD-style tests in a new file to verify inheritance from the Textual App, that custom and default items work as expected, and that the demo data builds correctly. I'll use `pytest.importorskip("textual")` to handle optional dependencies and follow 2-space indentation, adding the new test file via `apply_patch`. This setup aligns well with the user’s specs and should keep the tests and implementation nicely integrated!
+file update
+A /var/home/rick/Development/llm_writer/tests/test_source_browser_stub.py
+from __future__ import annotations
+
+import pytest
+
+pytest.importorskip("textual")
+
+from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
+  SourceBrowserApp,
+  build_demo_items,
+)
+from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
+
+
+def test_source_browser_app_is_textual_app():
+  from textual.app import App
+
+  assert issubclass(SourceBrowserApp, App)
+
+
+def test_source_browser_app_defaults_to_demo_items():
+  app = SourceBrowserApp()
+
+  assert app.items == build_demo_items()
+
+
+def test_source_browser_app_uses_passed_items():
+  items = [
+    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
+  ]
+
+  app = SourceBrowserApp(items=items, title="Custom")
+
+  assert app.items == items
+  assert app.app_title == "Custom"
+
+
+def test_build_demo_items_returns_stable_items():
+  demo = build_demo_items()
+
+  assert len(demo) >= 1
+  assert all(isinstance(item, NormalizedItem) for item in demo)
+apply_patch(auto_approved=true) exited 0 in 4ms:
+Success. Updated the following files:
+A tests/test_source_browser_stub.py
+file update:
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+file update:
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Preparing test run for SourceBrowserApp**
+exec
+bash -lc 'pytest tests/test_source_browser_stub.py' in /var/home/rick/Development/llm_writer exited 2 in 2.32s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 0 items / 1 error
+
+==================================== ERRORS ====================================
+______________ ERROR collecting tests/test_source_browser_stub.py ______________
+ImportError while importing test module '/var/home/rick/Development/llm_writer/tests/test_source_browser_stub.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/lib64/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_source_browser_stub.py:7: in <module>
+    from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
+E   ModuleNotFoundError: No module named 'simple_rag_writer.mcp.source_browser_app'
+=========================== short test summary info ============================
+file update:
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Updating plan after test addition**
+Plan update
+  ✓ Add tests for Textual source browser stub per task spec (failing first).
+  → Implement Textual source browser app skeleton using stub data to satisfy tests.
+  • Run pytest and ensure suite passes; adjust if needed.
+file update:
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Inspecting existing module folder**
+exec
+bash -lc 'ls src/simple_rag_writer/mcp' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+client.py
+__init__.py
+normalization.py
+prompt_policy.py
+__pycache__
+types.py
+file update:
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Drafting Textual App source browser**
+file update
+A /var/home/rick/Development/llm_writer/src/simple_rag_writer/mcp/source_browser_app.py
+from __future__ import annotations
+
+from typing import Iterable, List, Sequence
+
+from textual.app import App, ComposeResult
+from textual.widgets import DataTable, Footer, Header
+
+from simple_rag_writer.mcp.types import NormalizedItem
+
+
+def build_demo_items() -> List[NormalizedItem]:
+  """Return a predictable set of stubbed items for the browser."""
+  return [
+    NormalizedItem(
+      id="alpha",
+      type="note",
+      title="Welcome Packet",
+      snippet="Outline of the onboarding packet for the SRW demo.",
+      url="https://example.com/welcome",
+    ),
+    NormalizedItem(
+      id="beta",
+      type="doc",
+      title="Integration Notes",
+      snippet="Collected integration steps for MCP and planning mode.",
+      url="https://example.com/notes",
+    ),
+    NormalizedItem(
+      id="gamma",
+      type="link",
+      title="Reference API",
+      snippet="Summaries pulled via MCP reference API bridge.",
+      url="https://example.com/reference",
+    ),
+  ]
+
+
+def _format_snippet(item: NormalizedItem) -> str:
+  text = item.snippet or item.body or ""
+  return text[:96] + ("…" if len(text) > 96 else "")
+
+
+class SourceBrowserApp(App[None]):
+  """Minimal Textual application for browsing normalized MCP items."""
+
+  CSS = """
+  DataTable {
+    height: 1fr;
+  }
+  """
+  BINDINGS = [("q", "quit", "Quit")]
+
+  def __init__(
+    self,
+    items: Sequence[NormalizedItem] | None = None,
+    title: str = "MCP Source Browser",
+  ) -> None:
+    super().__init__()
+    self.items = list(items) if items is not None else build_demo_items()
+    self.app_title = title
+
+  def compose(self) -> ComposeResult:
+    yield Header(show_clock=False)
+    table = DataTable(id="mcp-items", zebra_stripes=True)
+    table.add_columns("Title", "Snippet", "URL")
+    for idx, row in enumerate(self._item_rows(self.items), start=1):
+      display_title, snippet, url = row
+      table.add_row(display_title or f"Item {idx}", snippet, url or "")
+    yield table
+    yield Footer()
+
+  def on_mount(self) -> None:
+    self.title = self.app_title
+
+  @staticmethod
+  def _item_rows(items: Iterable[NormalizedItem]):
+    for item in items:
+      yield (
+        item.title,
+        _format_snippet(item),
+        item.url or "",
+      )
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+A src/simple_rag_writer/mcp/source_browser_app.py
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6789bafdd5491c4b55245438cbe8bb0f52257a59
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,82 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items", zebra_stripes=True)
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]):
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6789bafdd5491c4b55245438cbe8bb0f52257a59
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,82 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items", zebra_stripes=True)
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]):
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Adjusting DataTable zebra_stripes usage**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -63,3 +63,4 @@
+     yield Header(show_clock=False)
+-    table = DataTable(id="mcp-items", zebra_stripes=True)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
+     table.add_columns("Title", "Snippet", "URL")
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/mcp/source_browser_app.py
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..680e4d7dffd306d097954ef44c3d471754a815ba
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]):
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..680e4d7dffd306d097954ef44c3d471754a815ba
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]):
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Adding type hints to generator**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -76,3 +76,3 @@
+   @staticmethod
+-  def _item_rows(items: Iterable[NormalizedItem]):
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
+     for item in items:
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/mcp/source_browser_app.py
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91bf65da1dc45d1338bf089f447be835dcbc2c54
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91bf65da1dc45d1338bf089f447be835dcbc2c54
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Verifying item equality and dependencies**
+exec
+bash -lc 'cat requirements.txt' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+# Core runtime dependencies
+pydantic
+PyYAML
+rich
+litellm
+
+# HTTP + HTML-to-text for URL references
+httpx
+beautifulsoup4
+
+# Optional TUI (for the Textual MCP source browser stub)
+textual
+
+# Dev / test tooling
+pytest
+black
+mypy
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91bf65da1dc45d1338bf089f447be835dcbc2c54
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Preparing to run tests**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 3.20s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 37 items
+
+tests/test_cli_parser.py ..                                              [  5%]
+tests/test_config_loader.py ...                                          [ 13%]
+tests/test_llm_registry.py ....                                          [ 24%]
+tests/test_mcp_normalization.py .....                                    [ 37%]
+tests/test_mcp_prompt_policy.py ..                                       [ 43%]
+tests/test_planning_log_writer.py ...                                    [ 51%]
+tests/test_planning_repl.py ....                                         [ 62%]
+tests/test_prompt_building.py ..                                         [ 67%]
+tests/test_replay_reconstruct.py ...                                     [ 75%]
+tests/test_runner_run_tasks.py ..                                        [ 81%]
+tests/test_source_browser_stub.py ....                                   [ 91%]
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91bf65da1dc45d1338bf089f447be835dcbc2c54
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Updating plan statuses**
+Plan update
+  ✓ Add tests for Textual source browser stub per task spec (failing first).
+  ✓ Implement Textual source browser app skeleton using stub data to satisfy tests.
+  ✓ Run pytest and ensure suite passes; adjust if needed.
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91bf65da1dc45d1338bf089f447be835dcbc2c54
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Preparing final detailed summary**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+## main
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log.done
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log.done
+?? codex/LOGS/tasklog_07_implement_automated_task_runner_1763288534.log
+?? codex/LOGS/tasklog_07_implement_automated_task_runner_1763288534.log.done
+?? codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log
+?? codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log.done
+?? codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log
+?? codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log.done
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91bf65da1dc45d1338bf089f447be835dcbc2c54
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,83 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Preparing final change summary**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -83 +83,10 @@
+       )
++
++
++def launch_demo(items: Sequence[NormalizedItem] | None = None) -> None:
++  """Run the stub browser with optional custom items."""
++  SourceBrowserApp(items=items).run()
++
++
++if __name__ == "__main__":
++  launch_demo()
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/mcp/source_browser_app.py
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..78bfa67f0388a96cc45a8b98d26c69bc603f5582
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,92 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
++
++
++def launch_demo(items: Sequence[NormalizedItem] | None = None) -> None:
++  """Run the stub browser with optional custom items."""
++  SourceBrowserApp(items=items).run()
++
++
++if __name__ == "__main__":
++  launch_demo()
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..78bfa67f0388a96cc45a8b98d26c69bc603f5582
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,92 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
++
++
++def launch_demo(items: Sequence[NormalizedItem] | None = None) -> None:
++  """Run the stub browser with optional custom items."""
++  SourceBrowserApp(items=items).run()
++
++
++if __name__ == "__main__":
++  launch_demo()
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Re-running tests to verify changes**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.58s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 37 items
+
+tests/test_cli_parser.py ..                                              [  5%]
+tests/test_config_loader.py ...                                          [ 13%]
+tests/test_llm_registry.py ....                                          [ 24%]
+tests/test_mcp_normalization.py .....                                    [ 37%]
+tests/test_mcp_prompt_policy.py ..                                       [ 43%]
+tests/test_planning_log_writer.py ...                                    [ 51%]
+tests/test_planning_repl.py ....                                         [ 62%]
+tests/test_prompt_building.py ..                                         [ 67%]
+tests/test_replay_reconstruct.py ...                                     [ 75%]
+tests/test_runner_run_tasks.py ..                                        [ 81%]
+tests/test_source_browser_stub.py ....                                   [ 91%]
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..78bfa67f0388a96cc45a8b98d26c69bc603f5582
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,92 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
++
++
++def launch_demo(items: Sequence[NormalizedItem] | None = None) -> None:
++  """Run the stub browser with optional custom items."""
++  SourceBrowserApp(items=items).run()
++
++
++if __name__ == "__main__":
++  launch_demo()
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+
+thinking
+**Preparing final summary and commit details**
+codex
+**Changes**
+- `tests/test_source_browser_stub.py:1` covers the new Textual browser stub in TDD fashion, asserting it subclasses `textual.app.App`, defaults to deterministic demo data, preserves custom item/title injection, and always returns `NormalizedItem` instances from `build_demo_items()`.
+- `src/simple_rag_writer/mcp/source_browser_app.py:1` introduces `SourceBrowserApp`, a minimal Textual UI that renders demo `NormalizedItem`s in a `DataTable`, trims snippets for display, sets up header/footer plus quit binding, and exposes `launch_demo()`/`__main__` hooks for manual runs.
+- Files touched: `tests/test_source_browser_stub.py`, `src/simple_rag_writer/mcp/source_browser_app.py`.
+- Suggested commit message: `feat: add textual source browser stub`.
+
+**Tests**
+- `pytest`
+
+Try `python -m simple_rag_writer.mcp.source_browser_app` (or call `launch_demo()`) if you want to see the stub UI manually.
+file update:
+diff --git a/src/simple_rag_writer/mcp/source_browser_app.py b/src/simple_rag_writer/mcp/source_browser_app.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..78bfa67f0388a96cc45a8b98d26c69bc603f5582
+--- /dev/null
++++ b/src/simple_rag_writer/mcp/source_browser_app.py
+@@ -0,0 +1,92 @@
++from __future__ import annotations
++
++from typing import Iterable, List, Sequence
++
++from textual.app import App, ComposeResult
++from textual.widgets import DataTable, Footer, Header
++
++from simple_rag_writer.mcp.types import NormalizedItem
++
++
++def build_demo_items() -> List[NormalizedItem]:
++  """Return a predictable set of stubbed items for the browser."""
++  return [
++    NormalizedItem(
++      id="alpha",
++      type="note",
++      title="Welcome Packet",
++      snippet="Outline of the onboarding packet for the SRW demo.",
++      url="https://example.com/welcome",
++    ),
++    NormalizedItem(
++      id="beta",
++      type="doc",
++      title="Integration Notes",
++      snippet="Collected integration steps for MCP and planning mode.",
++      url="https://example.com/notes",
++    ),
++    NormalizedItem(
++      id="gamma",
++      type="link",
++      title="Reference API",
++      snippet="Summaries pulled via MCP reference API bridge.",
++      url="https://example.com/reference",
++    ),
++  ]
++
++
++def _format_snippet(item: NormalizedItem) -> str:
++  text = item.snippet or item.body or ""
++  return text[:96] + ("…" if len(text) > 96 else "")
++
++
++class SourceBrowserApp(App[None]):
++  """Minimal Textual application for browsing normalized MCP items."""
++
++  CSS = """
++  DataTable {
++    height: 1fr;
++  }
++  """
++  BINDINGS = [("q", "quit", "Quit")]
++
++  def __init__(
++    self,
++    items: Sequence[NormalizedItem] | None = None,
++    title: str = "MCP Source Browser",
++  ) -> None:
++    super().__init__()
++    self.items = list(items) if items is not None else build_demo_items()
++    self.app_title = title
++
++  def compose(self) -> ComposeResult:
++    yield Header(show_clock=False)
++    table = DataTable(id="mcp-items")
++    table.zebra_stripes = True
++    table.add_columns("Title", "Snippet", "URL")
++    for idx, row in enumerate(self._item_rows(self.items), start=1):
++      display_title, snippet, url = row
++      table.add_row(display_title or f"Item {idx}", snippet, url or "")
++    yield table
++    yield Footer()
++
++  def on_mount(self) -> None:
++    self.title = self.app_title
++
++  @staticmethod
++  def _item_rows(items: Iterable[NormalizedItem]) -> Iterable[tuple[str, str, str]]:
++    for item in items:
++      yield (
++        item.title,
++        _format_snippet(item),
++        item.url or "",
++      )
++
++
++def launch_demo(items: Sequence[NormalizedItem] | None = None) -> None:
++  """Run the stub browser with optional custom items."""
++  SourceBrowserApp(items=items).run()
++
++
++if __name__ == "__main__":
++  launch_demo()
+diff --git a/tests/test_source_browser_stub.py b/tests/test_source_browser_stub.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f2073007331ca6585bc15942d6b071a5f5074db7
+--- /dev/null
++++ b/tests/test_source_browser_stub.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++
++import pytest
++
++pytest.importorskip("textual")
++
++from simple_rag_writer.mcp.source_browser_app import (  # noqa: E402
++  SourceBrowserApp,
++  build_demo_items,
++)
++from simple_rag_writer.mcp.types import NormalizedItem  # noqa: E402
++
++
++def test_source_browser_app_is_textual_app():
++  from textual.app import App
++
++  assert issubclass(SourceBrowserApp, App)
++
++
++def test_source_browser_app_defaults_to_demo_items():
++  app = SourceBrowserApp()
++
++  assert app.items == build_demo_items()
++
++
++def test_source_browser_app_uses_passed_items():
++  items = [
++    NormalizedItem(title="Doc 1", snippet="Snippet", url="https://example.com/1"),
++  ]
++
++  app = SourceBrowserApp(items=items, title="Custom")
++
++  assert app.items == items
++  assert app.app_title == "Custom"
++
++
++def test_build_demo_items_returns_stable_items():
++  demo = build_demo_items()
++
++  assert len(demo) >= 1
++  assert all(isinstance(item, NormalizedItem) for item in demo)
+
+tokens used
+33,792
+**Changes**
+- `tests/test_source_browser_stub.py:1` covers the new Textual browser stub in TDD fashion, asserting it subclasses `textual.app.App`, defaults to deterministic demo data, preserves custom item/title injection, and always returns `NormalizedItem` instances from `build_demo_items()`.
+- `src/simple_rag_writer/mcp/source_browser_app.py:1` introduces `SourceBrowserApp`, a minimal Textual UI that renders demo `NormalizedItem`s in a `DataTable`, trims snippets for display, sets up header/footer plus quit binding, and exposes `launch_demo()`/`__main__` hooks for manual runs.
+- Files touched: `tests/test_source_browser_stub.py`, `src/simple_rag_writer/mcp/source_browser_app.py`.
+- Suggested commit message: `feat: add textual source browser stub`.
+
+**Tests**
+- `pytest`
+
+Try `python -m simple_rag_writer.mcp.source_browser_app` (or call `launch_demo()`) if you want to see the stub UI manually.

@@ -1,0 +1,4858 @@
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c3c-1f9c-7200-959c-be780b278007
+--------
+user
+Implement the functionality described in codex/TASKS/09_implement_planning_repl.yaml, then verify with any available tests.
+ERROR: MCP client for `mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `context7-mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `exa` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `vibe-check-mcp-server` timed out after 10 seconds. Add or adjust `startup_timeout_sec` in your config.toml:
+[mcp_servers.vibe-check-mcp-server]
+startup_timeout_sec = XX
+
+thinking
+**Preparing for test-driven development**
+exec
+bash -lc ls in /var/home/rick/Development/llm_writer succeeded in 45ms:
+AGENTS.md
+codex
+codex.toml
+pyproject.toml
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Reading task file**
+exec
+bash -lc 'ls codex/TASKS' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+01_bootstrap_project_and_cli.yaml
+02_implement_config_models_and_loader.yaml
+03_implement_model_registry_and_litellm_integration.yaml
+04_define_task_spec_and_loader.yaml
+05_implement_prompt_builders.yaml
+06_implement_mcp_types_and_normalization.yaml
+07_implement_automated_task_runner.yaml
+08_implement_planning_log_writer.yaml
+09_implement_planning_repl.yaml
+10_implement_replay_support.yaml
+11_implement_mcp_prompt_policy_modes.yaml
+12_add_textual_source_browser_stub.yaml
+CODEX_TODO.md
+master_spec.yaml
+work_list
+
+thinking
+**Opening file 09**
+exec
+bash -lc 'cat codex/TASKS/09_implement_planning_repl.yaml' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+id: 09
+filename: 09_implement_planning_repl.yaml
+title: Implement PlanningRepl interactive loop
+description: >
+  Implement the interactive planning REPL that uses ModelRegistry,
+  PlanningLogWriter, and the planning prompt builder to support back-and-forth
+  chat with model switching commands.
+
+dependencies:
+  - 03
+  - 05
+  - 08
+
+goals:
+  - PlanningRepl supports free-form user input and commands:
+    /models, /model <id>, /quit.
+  - Each turn logs user and assistant text.
+  - The REPL uses ModelRegistry.complete() with the current model.
+
+artifacts:
+
+thinking
+**Reviewing dependencies and module structure**
+exec
+bash -lc 'ls src/simple_rag_writer' in /var/home/rick/Development/llm_writer succeeded in 71ms:
+cli
+config
+__init__.py
+llm
+logging
+mcp
+planning
+prompts
+__pycache__
+replay
+runner
+tasks
+
+thinking
+**Identifying need for planning modules**
+exec
+bash -lc 'ls src/simple_rag_writer/planning' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+__init__.py
+__pycache__
+repl.py
+
+thinking
+**Checking existing REPL file**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/planning/repl.py" in /var/home/rick/Development/llm_writer succeeded in 39ms:
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+from rich.console import Console
+from rich.panel import Panel
+
+from simple_rag_writer.config.models import AppConfig
+from simple_rag_writer.llm.registry import ModelRegistry
+from simple_rag_writer.logging.planning_log import PlanningLogWriter
+from simple_rag_writer.prompts.planning import build_planning_prompt
+
+console = Console()
+
+
+class PlanningRepl:
+  def __init__(
+    self,
+    config: AppConfig,
+    model_registry: ModelRegistry,
+
+thinking
+**Checking for existing tests**
+exec
+bash -lc 'ls tests' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+conftest.py
+__pycache__
+test_cli_parser.py
+test_config_loader.py
+test_llm_registry.py
+test_mcp_normalization.py
+test_planning_log_writer.py
+test_prompt_building.py
+test_runner_run_tasks.py
+test_task_loading.py
+
+thinking
+**Planning test development**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/llm/registry.py" in /var/home/rick/Development/llm_writer succeeded in 45ms:
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, List, Optional
+
+try:
+  import litellm
+except ImportError:  # pragma: no cover - only triggered when dependency missing
+  litellm = None
+
+from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
+from .params import merge_generation_params
+
+
+class ModelRegistry:
+  def __init__(self, config: AppConfig):
+    self._config = config
+    self._models: Dict[str, ModelConfig] = {m.id: m for m in config.models}
+    if config.default_model not in self._models:
+      raise ValueError(f"default_model {config.default_model} not found in models")
+
+thinking
+**Checking existing log writer**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/logging/planning_log.py" in /var/home/rick/Development/llm_writer succeeded in 42ms:
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+import yaml
+
+from simple_rag_writer.config.models import AppConfig
+
+
+@dataclass
+class McpLogItem:
+  idx: int
+  server: str
+  tool: str
+  label: Optional[str]
+  normalized_id: Optional[str]
+  title: Optional[str]
+
+thinking
+**Opening file to build prompt**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/prompts/planning.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+DEFAULT_HISTORY_WINDOW = 5
+
+
+def build_planning_prompt(
+  history: List[Tuple[str, str]],
+  user_message: str,
+  mcp_context: Optional[str] = None,
+  history_window: int = DEFAULT_HISTORY_WINDOW,
+) -> str:
+  """Build planning prompt from optional MCP context, recent history, and new user text."""
+  window = max(history_window, 0)
+  recent_history = history[-window:] if window else []
+
+  parts: List[str] = [
+    (
+      "You are a planning assistant helping the user design and refine writing tasks.\n"
+
+thinking
+**Preparing tests for interactive loop**
+exec
+bash -lc "sed -n '1,200p' tests/test_planning_log_writer.py" in /var/home/rick/Development/llm_writer succeeded in 39ms:
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from simple_rag_writer.config.models import (
+  AppConfig,
+  LoggingConfig,
+  ModelConfig,
+  PlanningLoggingConfig,
+  ProviderConfig,
+)
+from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
+
+
+def _make_config(
+  tmp_path: Path,
+  *,
+  include_mcp_events: bool = True,
+
+thinking
+**Preparing to update tests for history window**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/config/models.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ProviderConfig(BaseModel):
+  type: str
+  api_key_env: Optional[str] = None
+  api_key: Optional[str] = None
+  base_url: Optional[str] = None
+  model_prefix: Optional[str] = None
+
+
+class ModelConfig(BaseModel):
+  id: str
+  provider: str
+  model_name: str
+
+thinking
+**Analyzing testing and spec alignment**
+
+I'm reviewing the PlanningRepl implementation against the spec to identify any untested or missing behaviors, focusing on commands handling, prompt building with correct history length, logging calls, and console output capturing. I’m considering how to design tests that fail initially to follow TDD, possibly needing minor code adjustments to expose gaps or enforce use of constants like DEFAULT_HISTORY_WINDOW. I'll explore patching components and clever test scenarios to ensure full coverage and spec adherence.
+exec
+bash -lc 'rg -n "PlanningRepl" -n' in /var/home/rick/Development/llm_writer succeeded in 44ms:
+src/simple_rag_writer/planning/repl.py:16:class PlanningRepl:
+src/simple_rag_writer/cli/plan.py:4:from simple_rag_writer.planning.repl import PlanningRepl
+src/simple_rag_writer/cli/plan.py:20:  repl = PlanningRepl(
+codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log:61:title: Implement PlanningRepl interactive loop
+codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log:73:  - PlanningRepl supports free-form user input and commands:
+codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log:124:class PlanningRepl:
+codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log:273:I'm reviewing the PlanningRepl implementation against the spec to identify any untested or missing behaviors, focusing on commands handling, prompt building with correct history length, logging calls, and console output capturing. I’m considering how to design tests that fail initially to follow TDD, possibly needing minor code adjustments to expose gaps or enforce use of constants like DEFAULT_HISTORY_WINDOW. I'll explore patching components and clever test scenarios to ensure full coverage and spec adherence.
+codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log:275:bash -lc 'rg -n "PlanningRepl" -n' in /var/home/rick/Development/llm_writer
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:208:class PlanningRepl:
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:221:from simple_rag_writer.planning.repl import PlanningRepl
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:237:  repl = PlanningRepl(
+codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log:181:class PlanningRepl:
+codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log:644:from simple_rag_writer.planning.repl import PlanningRepl
+codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log:660:  repl = PlanningRepl(
+codex/TASKS/09_implement_planning_repl.yaml:3:title: Implement PlanningRepl interactive loop
+codex/TASKS/09_implement_planning_repl.yaml:15:  - PlanningRepl supports free-form user input and commands:
+codex/TASKS/09_implement_planning_repl.yaml:25:  - Verify run() loop behavior in PlanningRepl:
+
+thinking
+**Preparing multi-step plan**
+
+I see there's a log from previous runs that might help; since the task involves multiple steps and some complexity, I’ll create a plan following instructions to break down the work into inspecting the spec, writing failing tests, implementing the functionality, and running the tests. This structured approach should keep things clear and manageable.
+Plan update
+  → Add failing tests covering PlanningRepl command handling and run loop behavior using fakes per spec
+  • Adjust PlanningRepl implementation to satisfy new tests while keeping behavior scoped to task
+  • Run pytest to verify new and existing tests pass
+
+thinking
+**Designing tests for REPL commands**
+
+I'm planning thorough tests for the REPL's `_handle_command` and run loop, including fakes for console output, model registry, and logging. I want to simulate user inputs and verify prints, model switching, and command handling using pytest fixtures and monkeypatching. Let's explore existing test fixtures to reuse config setups.
+exec
+bash -lc "sed -n '1,200p' tests/conftest.py" in /var/home/rick/Development/llm_writer succeeded in 47ms:
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+  sys.path.insert(0, str(SRC))
+
+thinking
+**Designing comprehensive PlanningRepl tests**
+
+I’m working out detailed test scaffolding for PlanningRepl, creating fake configs, model registries, logs, and consoles to fully simulate user input, command handling, prompt building, and logging. I want to verify history truncation to the last 5 turns and proper integration of commands and logging in the run loop using rich Panel outputs and patched prompt builders for complete coverage.
+exec
+bash -lc 'rg -n "Planning" codex/master_spec.yaml' in /var/home/rick/Development/llm_writer exited 2 in 57ms:
+rg: codex/master_spec.yaml: IO error for operation on codex/master_spec.yaml: No such file or directory (os error 2)
+
+thinking
+**Verifying file path existence**
+exec
+bash -lc 'ls codex' in /var/home/rick/Development/llm_writer succeeded in 54ms:
+LOGS
+TASKS
+
+thinking
+**Checking for master_spec.yaml**
+exec
+bash -lc 'rg -n "Planning" master_spec.yaml' in /var/home/rick/Development/llm_writer exited 2 in 42ms:
+rg: master_spec.yaml: IO error for operation on master_spec.yaml: No such file or directory (os error 2)
+
+thinking
+**Verifying master spec filename location**
+exec
+bash -lc 'ls -a' in /var/home/rick/Development/llm_writer succeeded in 44ms:
+.
+..
+AGENTS.md
+codex
+codex.toml
+.git
+.gitignore
+pyproject.toml
+.pytest_cache
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Verifying presence of master_spec.yaml**
+exec
+bash -lc 'ls codex/TASKS' in /var/home/rick/Development/llm_writer succeeded in 50ms:
+01_bootstrap_project_and_cli.yaml
+02_implement_config_models_and_loader.yaml
+03_implement_model_registry_and_litellm_integration.yaml
+04_define_task_spec_and_loader.yaml
+05_implement_prompt_builders.yaml
+06_implement_mcp_types_and_normalization.yaml
+07_implement_automated_task_runner.yaml
+08_implement_planning_log_writer.yaml
+09_implement_planning_repl.yaml
+10_implement_replay_support.yaml
+11_implement_mcp_prompt_policy_modes.yaml
+12_add_textual_source_browser_stub.yaml
+CODEX_TODO.md
+master_spec.yaml
+work_list
+
+thinking
+**Checking master spec location**
+exec
+bash -lc 'rg -n "planning repl" -n codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer exited 1 in 39ms:
+
+
+thinking
+**Searching for PlanningRepl usage**
+exec
+bash -lc 'rg -n "Planning" codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer succeeded in 43ms:
+317:            type: PlanningLoggingConfig
+319:            PlanningLoggingConfig:
+641:    - name: "PlanningLogWriter"
+648:        - The planner initializes a PlanningLogWriter at startup:
+684:          signature: "(cfg: AppConfig, config_path: Path, default_model_id: str) -> PlanningLogWriter"
+687:            either a real PlanningLogWriter or a no-op. Sets up the log file
+766:        model switching, MCP /sources and /use, and PlanningLogWriter for logs.
+768:      responsibility: "Implementation of PlanningLogWriter and related helpers."
+779:        - Create PlanningLogWriter via from_config().
+
+thinking
+**Checking code context around line 750**
+exec
+bash -lc "sed -n '700,860p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+        - name: "log_mcp_injection"
+          signature: "(turn_index: int, items: list[McpLogItem]) -> None"
+          description: >
+            If include_mcp_events is true, write MCP reference info inline:
+              - '### MCP References Injected'
+              - A small Markdown table summarizing each item:
+                  | idx | server | tool | label | normalized_id | title |
+              - A fenced '```mcp-yaml' block with a YAML document containing
+                full normalized payload for injected items (including body).
+        - name: "end_turn"
+          signature: "(turn_index: int, assistant_text: str) -> None"
+          description: >
+            Complete the turn by writing:
+              - '**Assistant:**' followed by assistant_text.
+        - name: "close"
+          signature: "() -> None"
+          description: >
+            Flush and close the file handle. Safe to call multiple times; later
+            calls are no-ops.
+  log_format:
+
+
+thinking
+**Designing comprehensive tests and patches**
+
+I'm working through implementing detailed tests for the PlanningRepl, focusing on injecting a configurable history window via a module-level constant to satisfy TDD. I'll create fakes for console, model registry, and log writer to control side effects, patch constants carefully to test history slicing behavior, and verify _handle_command prints and model switching. This thorough approach helps ensure flexible, maintainable code and solid test coverage.
+thinking
+**Developing detailed REPL tests**
+
+I'm cataloging test cases to cover command handling like model switching, unknown models, and quit, plus a full REPL run test that patches history window and mocks prompt building. I'll ensure fake consoles capture prints and inputs properly, and that logs track turn starts and ends. This setup will verify that history slicing and command responses behave as expected, aligning well with TDD.
+file update
+A /var/home/rick/Development/llm_writer/tests/test_planning_repl.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List, Optional, Sequence, Tuple
+
+import pytest
+from rich.panel import Panel
+
+from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
+from simple_rag_writer.planning import repl as repl_module
+from simple_rag_writer.planning.repl import PlanningRepl
+
+
+def _make_config() -> AppConfig:
+  return AppConfig(
+    default_model="writer",
+    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
+    models=[
+      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
+      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
+    ],
+  )
+
+
+@dataclass
+class _FakeModel:
+  id: str
+  model_name: str
+
+
+class _FakeModelRegistry:
+  def __init__(self) -> None:
+    self.models = [
+      _FakeModel(id="writer", model_name="Writer Model"),
+      _FakeModel(id="editor", model_name="Editor Model"),
+    ]
+    self.current_id = "writer"
+    self.completions: List[str] = []
+
+  def list_models(self) -> List[_FakeModel]:
+    return list(self.models)
+
+  def set_current(self, model_id: str) -> None:
+    if model_id not in {m.id for m in self.models}:
+      raise KeyError(model_id)
+    self.current_id = model_id
+
+  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
+    self.completions.append(prompt)
+    return f"assistant-{len(self.completions)}"
+
+
+class _FakePlanningLogWriter:
+  def __init__(self) -> None:
+    self.started: List[Tuple[int, str]] = []
+    self.ended: List[Tuple[int, str]] = []
+    self.models_used: List[str] = []
+    self.closed = False
+
+  def start_turn(self, turn_index: int, user_text: str) -> None:
+    self.started.append((turn_index, user_text))
+
+  def log_model_used(self, model_id: str) -> None:
+    self.models_used.append(model_id)
+
+  def end_turn(self, turn_index: int, assistant_text: str) -> None:
+    self.ended.append((turn_index, assistant_text))
+
+  def close(self) -> None:
+    self.closed = True
+
+
+class _FakeConsole:
+  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
+    self._inputs = list(inputs or [])
+    self.printed: List[object] = []
+    self.prompts: List[str] = []
+
+  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
+    if args:
+      self.printed.append(args[0])
+    else:
+      self.printed.append(None)
+
+  def input(self, prompt: str) -> str:
+    self.prompts.append(prompt)
+    if not self._inputs:
+      raise EOFError("No more input")
+    return self._inputs.pop(0)
+
+
+def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
+  registry = _FakeModelRegistry()
+  log_writer = _FakePlanningLogWriter()
+  repl = PlanningRepl(_make_config(), registry, log_writer)
+  fake_console = _FakeConsole(console_inputs)
+  monkeypatch.setattr(repl_module, "console", fake_console)
+  return repl, registry, log_writer, fake_console
+
+
+def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
+  repl, registry, _, fake_console = _make_repl(monkeypatch)
+
+  assert repl._handle_command("/models") is False
+  assert fake_console.printed == [
+    "* writer (Writer Model)",
+    "  editor (Editor Model)",
+  ]
+
+
+def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
+  repl, registry, _, fake_console = _make_repl(monkeypatch)
+
+  assert repl._handle_command("/model editor") is False
+  assert registry.current_id == "editor"
+  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
+
+  assert repl._handle_command("/model missing") is False
+  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
+
+
+def test_handle_command_allows_quit(monkeypatch) -> None:
+  repl, _, _, _ = _make_repl(monkeypatch)
+  assert repl._handle_command("/quit") is True
+  assert repl._handle_command("/q") is True
+
+
+def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
+  repl, registry, log_writer, fake_console = _make_repl(
+    monkeypatch,
+    console_inputs=[
+      "one",
+      "two",
+      "three",
+      "four",
+      "five",
+      "six",
+      "seven",
+      "/quit",
+    ],
+  )
+  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
+
+  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
+
+  def fake_prompt_builder(
+    history: List[Tuple[str, str]],
+    user_message: str,
+    mcp_context: Optional[str],
+    history_window: int = 5,
+  ) -> str:
+    prompt_calls.append((list(history), user_message, mcp_context))
+    return f"prompt-{len(prompt_calls)}"
+
+  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
+
+  repl.run()
+
+  assert isinstance(fake_console.printed[0], Panel)
+  assert fake_console.printed[1:] == [
+    "[bold green]assistant-1[/bold green]",
+    "[bold green]assistant-2[/bold green]",
+    "[bold green]assistant-3[/bold green]",
+    "[bold green]assistant-4[/bold green]",
+    "[bold green]assistant-5[/bold green]",
+    "[bold green]assistant-6[/bold green]",
+    "[bold green]assistant-7[/bold green]",
+  ]
+
+  assert log_writer.started == [
+    (1, "one"),
+    (2, "two"),
+    (3, "three"),
+    (4, "four"),
+    (5, "five"),
+    (6, "six"),
+    (7, "seven"),
+  ]
+  assert log_writer.ended == [
+    (1, "assistant-1"),
+    (2, "assistant-2"),
+    (3, "assistant-3"),
+    (4, "assistant-4"),
+    (5, "assistant-5"),
+    (6, "assistant-6"),
+    (7, "assistant-7"),
+  ]
+  assert log_writer.models_used == ["writer"] * 7
+  assert log_writer.closed is True
+  assert len(prompt_calls) == 7
+
+  last_history, last_user, last_ctx = prompt_calls[-1]
+  assert last_user == "seven"
+  assert last_ctx is None
+  assert last_history == [
+    ("five", "assistant-5"),
+    ("six", "assistant-6"),
+  ]
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+A tests/test_planning_repl.py
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e460c623e4708d0c7bbb6b86dccf582344bc21a
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,198 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++
++import pytest
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e460c623e4708d0c7bbb6b86dccf582344bc21a
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,198 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++
++import pytest
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Checking and fixing indentation and imports**
+file update
+M /var/home/rick/Development/llm_writer/tests/test_planning_repl.py
+@@ -4,4 +4,2 @@
+ from typing import List, Optional, Sequence, Tuple
+-
+-import pytest
+ from rich.panel import Panel
+apply_patch(auto_approved=true) exited 0 in 4ms:
+Success. Updated the following files:
+M tests/test_planning_repl.py
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Running initial failing tests**
+exec
+bash -lc 'pytest tests/test_planning_repl.py' in /var/home/rick/Development/llm_writer exited 1 in 1.59s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 4 items
+
+tests/test_planning_repl.py ...F                                         [100%]
+
+=================================== FAILURES ===================================
+_______________ test_run_loop_logs_turns_and_uses_history_window _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc47ac6ef10>
+
+    def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
+      repl, registry, log_writer, fake_console = _make_repl(
+        monkeypatch,
+        console_inputs=[
+          "one",
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Updating history window usage**
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Checking spacing issue**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/planning/repl.py" in /var/home/rick/Development/llm_writer succeeded in 39ms:
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+from rich.console import Console
+from rich.panel import Panel
+
+from simple_rag_writer.config.models import AppConfig
+from simple_rag_writer.llm.registry import ModelRegistry
+from simple_rag_writer.logging.planning_log import PlanningLogWriter
+from simple_rag_writer.prompts.planning import build_planning_prompt
+
+console = Console()
+
+
+class PlanningRepl:
+  def __init__(
+    self,
+    config: AppConfig,
+    model_registry: ModelRegistry,
+file update:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Applying manual patch for import**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/planning/repl.py
+@@ -10,5 +10,9 @@
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/planning/repl.py
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..6b5d992192231ec668927af6bc910f72f9153232
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..6b5d992192231ec668927af6bc910f72f9153232
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Patching run segment**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/planning/repl.py
+@@ -59,3 +59,5 @@
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/planning/repl.py
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Verifying import order and running tests**
+exec
+bash -lc 'pytest tests/test_planning_repl.py' in /var/home/rick/Development/llm_writer succeeded in 1.46s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 4 items
+
+tests/test_planning_repl.py ....                                         [100%]
+
+============================== 4 passed in 0.59s ===============================
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Running full pytest suite**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.52s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 28 items
+
+tests/test_cli_parser.py ..                                              [  7%]
+tests/test_config_loader.py ...                                          [ 17%]
+tests/test_llm_registry.py ....                                          [ 32%]
+tests/test_mcp_normalization.py .....                                    [ 50%]
+tests/test_planning_log_writer.py ...                                    [ 60%]
+tests/test_planning_repl.py ....                                         [ 75%]
+tests/test_prompt_building.py ..                                         [ 82%]
+tests/test_runner_run_tasks.py ..                                        [ 89%]
+tests/test_task_loading.py ...                                           [100%]
+
+============================== 28 passed in 0.66s ==============================
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Updating plan statuses**
+Plan update
+  ✓ Add failing tests covering PlanningRepl command handling and run loop behavior using fakes per spec
+  ✓ Adjust PlanningRepl implementation to satisfy new tests while keeping behavior scoped to task
+  ✓ Run pytest to verify new and existing tests pass
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Preparing line number references**
+exec
+bash -lc "nl -ba src/simple_rag_writer/planning/repl.py | sed -n '1,200p'" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+     1	from __future__ import annotations
+     2	
+     3	from typing import List, Optional, Tuple
+     4	
+     5	from rich.console import Console
+     6	from rich.panel import Panel
+     7	
+     8	from simple_rag_writer.config.models import AppConfig
+     9	from simple_rag_writer.llm.registry import ModelRegistry
+    10	from simple_rag_writer.logging.planning_log import PlanningLogWriter
+    11	from simple_rag_writer.prompts.planning import (
+    12	  DEFAULT_HISTORY_WINDOW,
+    13	  build_planning_prompt,
+    14	)
+    15	
+    16	console = Console()
+    17	HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+    18	
+    19	
+    20	class PlanningRepl:
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Adding line numbers to test file**
+exec
+bash -lc 'nl -ba tests/test_planning_repl.py' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+     1	from __future__ import annotations
+     2	
+     3	from dataclasses import dataclass
+     4	from typing import List, Optional, Sequence, Tuple
+     5	from rich.panel import Panel
+     6	
+     7	from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
+     8	from simple_rag_writer.planning import repl as repl_module
+     9	from simple_rag_writer.planning.repl import PlanningRepl
+    10	
+    11	
+    12	def _make_config() -> AppConfig:
+    13	  return AppConfig(
+    14	    default_model="writer",
+    15	    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
+    16	    models=[
+    17	      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
+    18	      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
+    19	    ],
+    20	  )
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Considering cleanup and git status**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+## main
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log.done
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log.done
+?? codex/LOGS/tasklog_07_implement_automated_task_runner_1763288534.log
+?? codex/LOGS/tasklog_07_implement_automated_task_runner_1763288534.log.done
+?? codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log
+?? codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log.done
+?? codex/LOGS/tasklog_09_implement_planning_repl_1763289341.log
+?? src/simple_rag_writer/__init__.py
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+
+thinking
+**Summarizing final changes and tests**
+codex
+**Changes**
+- `tests/test_planning_repl.py:12-196` adds a fake console, model registry, and log writer so we can unit-test `_handle_command` responses and exercise the full REPL loop, asserting the Rich banner, command outputs, logging calls, and that `build_planning_prompt` only receives the configured history window.
+- `src/simple_rag_writer/planning/repl.py:11-67` now exposes a module-level `HISTORY_WINDOW` (defaulting to the prompt builder’s constant) and slices recent history via that setting before invoking `build_planning_prompt`, making the run loop configurable and matching the new tests.
+
+**Tests**
+- `pytest`
+file update:
+diff --git a/src/simple_rag_writer/planning/repl.py b/src/simple_rag_writer/planning/repl.py
+index 40a72617ed68f8624f4a15926c097fb6bb7c607a..eb126c3d11807f241fc4f735634edf868dd93153
+--- a/src/simple_rag_writer/planning/repl.py
++++ b/src/simple_rag_writer/planning/repl.py
+@@ -8,9 +8,13 @@
+ from simple_rag_writer.config.models import AppConfig
+ from simple_rag_writer.llm.registry import ModelRegistry
+ from simple_rag_writer.logging.planning_log import PlanningLogWriter
+-from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.planning import (
++  DEFAULT_HISTORY_WINDOW,
++  build_planning_prompt,
++)
+ 
+ console = Console()
++HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+ 
+ 
+ class PlanningRepl:
+@@ -53,7 +57,9 @@
+       self._turn_index += 1
+       self._log.start_turn(self._turn_index, line)
+ 
+-      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
++      window = max(HISTORY_WINDOW, 0)
++      history_slice = self._history[-window:] if window else []
++      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+       output = self._registry.complete(prompt)
+       self._log.log_model_used(self._registry.current_id)
+       self._log.end_turn(self._turn_index, output)
+diff --git a/tests/test_planning_repl.py b/tests/test_planning_repl.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7ef0a03e5f0b4f8b25aab5d2533546ba4507519f
+--- /dev/null
++++ b/tests/test_planning_repl.py
+@@ -0,0 +1,196 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import List, Optional, Sequence, Tuple
++from rich.panel import Panel
++
++from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
++from simple_rag_writer.planning import repl as repl_module
++from simple_rag_writer.planning.repl import PlanningRepl
++
++
++def _make_config() -> AppConfig:
++  return AppConfig(
++    default_model="writer",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer", provider="local", model_name="Writer Model"),
++      ModelConfig(id="editor", provider="local", model_name="Editor Model"),
++    ],
++  )
++
++
++@dataclass
++class _FakeModel:
++  id: str
++  model_name: str
++
++
++class _FakeModelRegistry:
++  def __init__(self) -> None:
++    self.models = [
++      _FakeModel(id="writer", model_name="Writer Model"),
++      _FakeModel(id="editor", model_name="Editor Model"),
++    ]
++    self.current_id = "writer"
++    self.completions: List[str] = []
++
++  def list_models(self) -> List[_FakeModel]:
++    return list(self.models)
++
++  def set_current(self, model_id: str) -> None:
++    if model_id not in {m.id for m in self.models}:
++      raise KeyError(model_id)
++    self.current_id = model_id
++
++  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
++    self.completions.append(prompt)
++    return f"assistant-{len(self.completions)}"
++
++
++class _FakePlanningLogWriter:
++  def __init__(self) -> None:
++    self.started: List[Tuple[int, str]] = []
++    self.ended: List[Tuple[int, str]] = []
++    self.models_used: List[str] = []
++    self.closed = False
++
++  def start_turn(self, turn_index: int, user_text: str) -> None:
++    self.started.append((turn_index, user_text))
++
++  def log_model_used(self, model_id: str) -> None:
++    self.models_used.append(model_id)
++
++  def end_turn(self, turn_index: int, assistant_text: str) -> None:
++    self.ended.append((turn_index, assistant_text))
++
++  def close(self) -> None:
++    self.closed = True
++
++
++class _FakeConsole:
++  def __init__(self, inputs: Optional[Sequence[str]] = None) -> None:
++    self._inputs = list(inputs or [])
++    self.printed: List[object] = []
++    self.prompts: List[str] = []
++
++  def print(self, *args, **kwargs) -> None:  # pragma: no cover - basic forwarding
++    if args:
++      self.printed.append(args[0])
++    else:
++      self.printed.append(None)
++
++  def input(self, prompt: str) -> str:
++    self.prompts.append(prompt)
++    if not self._inputs:
++      raise EOFError("No more input")
++    return self._inputs.pop(0)
++
++
++def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
++  registry = _FakeModelRegistry()
++  log_writer = _FakePlanningLogWriter()
++  repl = PlanningRepl(_make_config(), registry, log_writer)
++  fake_console = _FakeConsole(console_inputs)
++  monkeypatch.setattr(repl_module, "console", fake_console)
++  return repl, registry, log_writer, fake_console
++
++
++def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/models") is False
++  assert fake_console.printed == [
++    "* writer (Writer Model)",
++    "  editor (Editor Model)",
++  ]
++
++
++def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
++  repl, registry, _, fake_console = _make_repl(monkeypatch)
++
++  assert repl._handle_command("/model editor") is False
++  assert registry.current_id == "editor"
++  assert fake_console.printed[-1] == "Switched model to [bold]editor[/bold]"
++
++  assert repl._handle_command("/model missing") is False
++  assert fake_console.printed[-1] == "[red]Unknown model id:[/red] missing"
++
++
++def test_handle_command_allows_quit(monkeypatch) -> None:
++  repl, _, _, _ = _make_repl(monkeypatch)
++  assert repl._handle_command("/quit") is True
++  assert repl._handle_command("/q") is True
++
++
++def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
++  repl, registry, log_writer, fake_console = _make_repl(
++    monkeypatch,
++    console_inputs=[
++      "one",
++      "two",
++      "three",
++      "four",
++      "five",
++      "six",
++      "seven",
++      "/quit",
++    ],
++  )
++  monkeypatch.setattr(repl_module, "HISTORY_WINDOW", 2, raising=False)
++
++  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
++
++  def fake_prompt_builder(
++    history: List[Tuple[str, str]],
++    user_message: str,
++    mcp_context: Optional[str],
++    history_window: int = 5,
++  ) -> str:
++    prompt_calls.append((list(history), user_message, mcp_context))
++    return f"prompt-{len(prompt_calls)}"
++
++  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
++
++  repl.run()
++
++  assert isinstance(fake_console.printed[0], Panel)
++  assert fake_console.printed[1:] == [
++    "[bold green]assistant-1[/bold green]",
++    "[bold green]assistant-2[/bold green]",
++    "[bold green]assistant-3[/bold green]",
++    "[bold green]assistant-4[/bold green]",
++    "[bold green]assistant-5[/bold green]",
++    "[bold green]assistant-6[/bold green]",
++    "[bold green]assistant-7[/bold green]",
++  ]
++
++  assert log_writer.started == [
++    (1, "one"),
++    (2, "two"),
++    (3, "three"),
++    (4, "four"),
++    (5, "five"),
++    (6, "six"),
++    (7, "seven"),
++  ]
++  assert log_writer.ended == [
++    (1, "assistant-1"),
++    (2, "assistant-2"),
++    (3, "assistant-3"),
++    (4, "assistant-4"),
++    (5, "assistant-5"),
++    (6, "assistant-6"),
++    (7, "assistant-7"),
++  ]
++  assert log_writer.models_used == ["writer"] * 7
++  assert log_writer.closed is True
++  assert len(prompt_calls) == 7
++
++  last_history, last_user, last_ctx = prompt_calls[-1]
++  assert last_user == "seven"
++  assert last_ctx is None
++  assert last_history == [
++    ("five", "assistant-5"),
++    ("six", "assistant-6"),
++  ]
+
+tokens used
+105,962
+**Changes**
+- `tests/test_planning_repl.py:12-196` adds a fake console, model registry, and log writer so we can unit-test `_handle_command` responses and exercise the full REPL loop, asserting the Rich banner, command outputs, logging calls, and that `build_planning_prompt` only receives the configured history window.
+- `src/simple_rag_writer/planning/repl.py:11-67` now exposes a module-level `HISTORY_WINDOW` (defaulting to the prompt builder’s constant) and slices recent history via that setting before invoking `build_planning_prompt`, making the run loop configurable and matching the new tests.
+
+**Tests**
+- `pytest`

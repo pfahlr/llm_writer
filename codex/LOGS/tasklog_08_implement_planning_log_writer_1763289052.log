@@ -1,0 +1,4444 @@
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c37-b4f6-7e81-8344-7a31e0f0e9a1
+--------
+user
+Implement the functionality described in codex/TASKS/08_implement_planning_log_writer.yaml, then verify with any available tests.
+ERROR: MCP client for `exa` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `vibe-check-mcp-server` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `context7-mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+
+thinking
+**Preparing to explore repository**
+exec
+bash -lc ls in /var/home/rick/Development/llm_writer succeeded in 98ms:
+AGENTS.md
+codex
+codex.toml
+pyproject.toml
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Reading task file**
+exec
+bash -lc "sed -n '1,200p' codex/TASKS/08_implement_planning_log_writer.yaml" in /var/home/rick/Development/llm_writer succeeded in 42ms:
+id: 08
+filename: 08_implement_planning_log_writer.yaml
+title: Implement PlanningLogWriter and MCP logging
+description: >
+  Implement PlanningLogWriter to capture planning sessions as Markdown logs
+  with inline MCP reference blocks between turns.
+
+dependencies:
+  - 02
+
+goals:
+  - Planning logs are written under the configured logs directory with
+    timestamped filenames.
+  - Each turn is recorded with user and assistant text.
+  - MCP references can be logged as a table plus a fenced mcp-yaml block.
+
+artifacts:
+  - src/simple_rag_writer/logging/planning_log.py
+  - tests/test_planning_log_writer.py
+
+
+thinking
+**Reviewing testing and logging approach**
+exec
+bash -lc 'ls src/simple_rag_writer' in /var/home/rick/Development/llm_writer succeeded in 43ms:
+cli
+config
+__init__.py
+llm
+logging
+mcp
+planning
+prompts
+__pycache__
+replay
+runner
+tasks
+
+thinking
+**Listing logging and planning needs**
+exec
+bash -lc 'ls src/simple_rag_writer/logging' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+__init__.py
+planning_log.py
+__pycache__
+
+thinking
+**Inspecting existing file**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/logging/planning_log.py" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+from simple_rag_writer.config.models import AppConfig
+
+
+@dataclass
+class McpLogItem:
+  idx: int
+  server: str
+  tool: str
+  label: Optional[str]
+  normalized_id: Optional[str]
+  title: Optional[str]
+  type: Optional[str]
+  snippet: Optional[str]
+
+thinking
+**Checking existing tests for planning**
+exec
+bash -lc 'rg -n "PlanningLog" -n tests' in /var/home/rick/Development/llm_writer exited 1 in 43ms:
+
+
+thinking
+**Preparing to implement per spec**
+exec
+bash -lc "rg -n \"logging\" -n src/simple_rag_writer/config -g'*.py'" in /var/home/rick/Development/llm_writer succeeded in 43ms:
+src/simple_rag_writer/config/models.py:68:  logging: LoggingConfig = Field(default_factory=LoggingConfig)
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/config/models.py" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ProviderConfig(BaseModel):
+  type: str
+  api_key_env: Optional[str] = None
+  api_key: Optional[str] = None
+  base_url: Optional[str] = None
+  model_prefix: Optional[str] = None
+
+
+class ModelConfig(BaseModel):
+  id: str
+  provider: str
+  model_name: str
+
+thinking
+**Clarifying PlanningLogWriter requirements**
+exec
+bash -lc 'ls codex/TASKS' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+01_bootstrap_project_and_cli.yaml
+02_implement_config_models_and_loader.yaml
+03_implement_model_registry_and_litellm_integration.yaml
+04_define_task_spec_and_loader.yaml
+05_implement_prompt_builders.yaml
+06_implement_mcp_types_and_normalization.yaml
+07_implement_automated_task_runner.yaml
+08_implement_planning_log_writer.yaml
+09_implement_planning_repl.yaml
+10_implement_replay_support.yaml
+11_implement_mcp_prompt_policy_modes.yaml
+12_add_textual_source_browser_stub.yaml
+CODEX_TODO.md
+master_spec.yaml
+work_list
+
+thinking
+**Examining test requirements and TDD approach**
+exec
+bash -lc 'ls tests' in /var/home/rick/Development/llm_writer succeeded in 50ms:
+conftest.py
+__pycache__
+test_cli_parser.py
+test_config_loader.py
+test_llm_registry.py
+test_mcp_normalization.py
+test_prompt_building.py
+test_runner_run_tasks.py
+test_task_loading.py
+
+thinking
+**Analyzing test strategy and PlanningLogWriter behavior**
+exec
+bash -lc "rg -n \"PlanningLog\" -n src -g'*.py'" in /var/home/rick/Development/llm_writer succeeded in 46ms:
+src/simple_rag_writer/planning/repl.py:10:from simple_rag_writer.logging.planning_log import PlanningLogWriter
+src/simple_rag_writer/planning/repl.py:21:    log_writer: PlanningLogWriter,
+src/simple_rag_writer/logging/planning_log.py:26:class PlanningLogWriter:
+src/simple_rag_writer/logging/planning_log.py:40:  ) -> "PlanningLogWriter":
+src/simple_rag_writer/cli/plan.py:5:from simple_rag_writer.logging.planning_log import PlanningLogWriter
+src/simple_rag_writer/cli/plan.py:14:  log_writer = PlanningLogWriter.from_config(
+src/simple_rag_writer/config/models.py:50:class PlanningLoggingConfig(BaseModel):
+src/simple_rag_writer/config/models.py:58:  planning: PlanningLoggingConfig = Field(default_factory=PlanningLoggingConfig)
+
+thinking
+**Inspecting repl planning file**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/planning/repl.py" in /var/home/rick/Development/llm_writer succeeded in 48ms:
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+from rich.console import Console
+from rich.panel import Panel
+
+from simple_rag_writer.config.models import AppConfig
+from simple_rag_writer.llm.registry import ModelRegistry
+from simple_rag_writer.logging.planning_log import PlanningLogWriter
+from simple_rag_writer.prompts.planning import build_planning_prompt
+
+console = Console()
+
+
+class PlanningRepl:
+  def __init__(
+    self,
+    config: AppConfig,
+    model_registry: ModelRegistry,
+
+thinking
+**Verifying method usage and CLI writer configuration**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/cli/plan.py" in /var/home/rick/Development/llm_writer succeeded in 61ms:
+from __future__ import annotations
+
+from simple_rag_writer.llm.registry import ModelRegistry
+from simple_rag_writer.planning.repl import PlanningRepl
+from simple_rag_writer.logging.planning_log import PlanningLogWriter
+from simple_rag_writer.config.models import AppConfig
+
+
+def run_planning_mode(config: AppConfig, initial_model: str | None = None) -> int:
+  registry = ModelRegistry(config)
+  if initial_model:
+    registry.set_current(initial_model)
+
+  log_writer = PlanningLogWriter.from_config(
+    config,
+    config_path=config.config_path,
+    default_model_id=registry.current_id,
+  )
+
+  repl = PlanningRepl(
+
+thinking
+**Reviewing config and test coverage**
+exec
+bash -lc "sed -n '1,200p' tests/test_runner_run_tasks.py" in /var/home/rick/Development/llm_writer succeeded in 42ms:
+from __future__ import annotations
+
+from io import StringIO
+from pathlib import Path
+from textwrap import dedent
+
+from rich.console import Console
+
+from simple_rag_writer.config.models import (
+  AppConfig,
+  McpPromptPolicy,
+  ModelConfig,
+  ProviderConfig,
+  RawCappedPolicy,
+  SummaryPolicy,
+)
+from simple_rag_writer.mcp.types import McpToolResult
+from simple_rag_writer.runner.run_tasks import run_tasks_for_paths
+
+
+
+thinking
+**Preparing multi-step plan for implementation**
+
+I’m mapping out a plan with multiple steps since this task is more than trivial—it involves tests, code adjustments, and validation. My plan will start with adding failing tests for logging behavior, then adjusting the log writer to meet those tests, and finally running targeted pytest suites. I’ll make sure to update the plan as I go along.
+Plan update
+  → Add planning log writer tests that cover log directory creation, header, turn logging, and MCP injections per spec.
+  • Update PlanningLogWriter implementation to satisfy new tests if needed.
+  • Run pytest to verify all tests pass.
+
+thinking
+**Identifying missing logging features**
+
+I’m reviewing the planning log writer and spec to find any missing features, especially around config flags like `include_mcp_events` and `mcp_inline` that aren’t currently used. It looks like logging MCP injections might need turn indexing or conditional toggles per the spec, so I’m double-checking these gaps before writing tests to follow proper TDD.
+exec
+bash -lc 'rg -n "include_mcp_events" -n' in /var/home/rick/Development/llm_writer succeeded in 768ms:
+tests/test_config_loader.py:48:        include_mcp_events: false
+src/simple_rag_writer/config/models.py:53:  include_mcp_events: bool = True
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:276:I’m reviewing the planning log writer and spec to find any missing features, especially around config flags like `include_mcp_events` and `mcp_inline` that aren’t currently used. It looks like logging MCP injections might need turn indexing or conditional toggles per the spec, so I’m double-checking these gaps before writing tests to follow proper TDD.
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:278:bash -lc 'rg -n "include_mcp_events" -n' in /var/home/rick/Development/llm_writer
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:387:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:495:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:602:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:736:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:868:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1000:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1063:                include_mcp_events:
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1129:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1261:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1404:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1535:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1691:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:1829:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:2010:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:2167:+        include_mcp_events: false
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:2332:+        include_mcp_events: false
+
+thinking
+**Extracting master spec section for review**
+exec
+bash -lc "sed -n '640,760p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+  classes:
+    - name: "PlanningLogWriter"
+      description: >
+        Helper responsible for writing planning session transcripts to
+        Markdown files according to logging.planning.* config and the
+        planning_log_format spec. Encapsulates filename creation, header
+        writing, and per-turn logging (including inline MCP references).
+      lifecycle:
+        - The planner initializes a PlanningLogWriter at startup:
+            - If logging.planning.enabled is false, returns a no-op implementation.
+            - Otherwise:
+              - Ensure logging.planning.dir exists.
+              - Create a filename using pattern "plan-YYYYMMDD-HHMMSS.md".
+              - Open the file and write the session header.
+        - During the REPL:
+            - For each turn index N:
+              - start_turn(N, user_text)
+              - if /inject used: log_mcp_injection(N, items)
+              - end_turn(N, assistant_text)
+        - On exit:
+
+thinking
+**Reviewing logging implementation against spec**
+exec
+bash -lc 'rg -n "mcp_inline" -n codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+336:                mcp_inline:
+409:        mcp_inline: true
+665:        - logging.planning.mcp_inline
+
+thinking
+**Requesting context snippet**
+exec
+bash -lc "sed -n '320,360p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+              fields:
+                enabled:
+                  type: bool
+                  default: true
+                  description: "If true, log planning sessions as Markdown."
+                dir:
+                  type: string
+                  default: "logs"
+                  description: "Directory to store planning logs."
+                include_mcp_events:
+                  type: bool
+                  default: true
+                  description: >
+                    If true, planning logs include MCP-related commands and
+                    the exact reference text that was injected into the model
+                    context.
+                mcp_inline:
+                  type: bool
+                  default: true
+                  description: >
+
+thinking
+**Designing comprehensive tests and implementation plan**
+
+I’m mapping out thorough tests to verify config flags, header rewriting with models used, and proper MCP injection logging per the spec. I want to start by crafting failing tests to guide implementing features like conditional MCP logging, header updates on close, and output formatting using YAML. This approach ensures alignment with the spec while preparing the code for robust behavior verification.
+exec
+bash -lc 'cat requirements.txt' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+# Core runtime dependencies
+pydantic
+PyYAML
+rich
+litellm
+
+# HTTP + HTML-to-text for URL references
+httpx
+beautifulsoup4
+
+# Optional TUI (for the Textual MCP source browser stub)
+textual
+
+# Dev / test tooling
+pytest
+black
+mypy
+
+thinking
+**Designing tests for PlanningLogWriter**
+
+I’m mapping out tests for the PlanningLogWriter, focusing on log creation, model usage headers, and conditional MCP event logging with YAML parsing. I plan to add a new test file with helper functions to configure logging options and verify the presence or absence of specific log content depending on enabled features. I’m considering how to handle deterministic ordering and safe YAML loading for robust assertions.
+file update
+A /var/home/rick/Development/llm_writer/tests/test_planning_log_writer.py
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+from simple_rag_writer.config.models import (
+  AppConfig,
+  LoggingConfig,
+  ModelConfig,
+  PlanningLoggingConfig,
+  ProviderConfig,
+)
+from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
+
+
+def _make_config(
+  tmp_path: Path,
+  *,
+  include_mcp_events: bool = True,
+  mcp_inline: bool = True,
+) -> AppConfig:
+  planning_cfg = PlanningLoggingConfig(
+    enabled=True,
+    dir=str(tmp_path / "logs"),
+    include_mcp_events=include_mcp_events,
+    mcp_inline=mcp_inline,
+  )
+  return AppConfig(
+    default_model="writer-model",
+    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
+    models=[
+      ModelConfig(id="writer-model", provider="local", model_name="writer"),
+      ModelConfig(id="editor-model", provider="local", model_name="editor"),
+    ],
+    logging=LoggingConfig(planning=planning_cfg),
+  )
+
+
+def _read_log_text(log_dir: Path) -> str:
+  files = list((log_dir).glob("plan-*.md"))
+  assert len(files) == 1, "expected exactly one planning log file"
+  return files[0].read_text(encoding="utf-8")
+
+
+def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
+  config = _make_config(tmp_path)
+  config_path = tmp_path / "config.yaml"
+  writer = PlanningLogWriter.from_config(
+    config,
+    config_path=config_path,
+    default_model_id="writer-model",
+  )
+
+  writer.log_model_used("writer-model")
+  writer.log_model_used("editor-model")
+  writer.start_turn(1, "Need help outlining the chapter.")
+  writer.end_turn(1, "Let's start with an outline.")
+  writer.close()
+
+  log_text = _read_log_text(tmp_path / "logs")
+  assert log_text.startswith("# Planning Session — ")
+  assert f"- Config: {config_path}" in log_text
+  assert "- Default model: writer-model" in log_text
+  assert "- Models used: editor-model, writer-model" in log_text
+  assert "## Turn 1" in log_text
+  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
+  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
+
+
+def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
+  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
+  writer = PlanningLogWriter.from_config(
+    config,
+    config_path=tmp_path / "cfg.yaml",
+    default_model_id="writer-model",
+  )
+
+  items = [
+    McpLogItem(
+      idx=1,
+      server="notes",
+      tool="search",
+      label="Spec",
+      normalized_id="notes#1",
+      title="Notebook entry",
+      type="document",
+      snippet="First few lines",
+      body="Full body",
+      url="https://example.com/spec",
+      metadata={"score": 0.9},
+    )
+  ]
+  writer.start_turn(1, "Use the spec.")
+  writer.log_mcp_injection(1, items)
+  writer.end_turn(1, "Referencing the spec now.")
+  writer.close()
+
+  log_text = _read_log_text(tmp_path / "logs")
+  assert "### MCP References Injected" in log_text
+  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
+
+  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
+  data = yaml.safe_load(fenced_block)
+  assert data == {
+    "references": [
+      {
+        "idx": 1,
+        "server": "notes",
+        "tool": "search",
+        "label": "Spec",
+        "normalized_id": "notes#1",
+        "title": "Notebook entry",
+        "type": "document",
+        "snippet": "First few lines",
+        "body": "Full body",
+        "url": "https://example.com/spec",
+        "metadata": {"score": 0.9},
+      }
+    ]
+  }
+
+
+def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
+  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
+  writer = PlanningLogWriter.from_config(
+    config,
+    config_path=tmp_path / "cfg.yaml",
+    default_model_id="writer-model",
+  )
+  writer.start_turn(1, "Hello")
+  writer.log_mcp_injection(
+    1,
+    [
+      McpLogItem(
+        idx=1,
+        server="notes",
+        tool="search",
+        label=None,
+        normalized_id=None,
+        title=None,
+        type=None,
+        snippet=None,
+        body=None,
+        url=None,
+      )
+    ],
+  )
+  writer.end_turn(1, "World")
+  writer.close()
+
+  log_text = _read_log_text(tmp_path / "logs")
+  assert "MCP References Injected" not in log_text
+apply_patch(auto_approved=true) exited 0 in 9ms:
+Success. Updated the following files:
+A tests/test_planning_log_writer.py
+file update:
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+file update:
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Verifying dataclass fields and test readiness**
+exec
+bash -lc 'pytest tests/test_planning_log_writer.py' in /var/home/rick/Development/llm_writer exited 1 in 1.46s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/test_planning_log_writer.py FFF                                    [100%]
+
+=================================== FAILURES ===================================
+_______________ test_planning_log_writer_writes_header_and_turns _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-rick/pytest-15/test_planning_log_writer_write0')
+
+    def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
+      config = _make_config(tmp_path)
+      config_path = tmp_path / "config.yaml"
+      writer = PlanningLogWriter.from_config(
+        config,
+file update:
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Planning feature implementations for test passes**
+exec
+bash -lc 'rg -n "PlanningLogWriter" -n' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+tests/test_planning_log_writer.py:14:from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
+tests/test_planning_log_writer.py:49:  writer = PlanningLogWriter.from_config(
+tests/test_planning_log_writer.py:73:  writer = PlanningLogWriter.from_config(
+tests/test_planning_log_writer.py:126:  writer = PlanningLogWriter.from_config(
+src/simple_rag_writer/logging/planning_log.py:26:class PlanningLogWriter:
+src/simple_rag_writer/logging/planning_log.py:40:  ) -> "PlanningLogWriter":
+src/simple_rag_writer/cli/plan.py:5:from simple_rag_writer.logging.planning_log import PlanningLogWriter
+src/simple_rag_writer/cli/plan.py:14:  log_writer = PlanningLogWriter.from_config(
+src/simple_rag_writer/planning/repl.py:10:from simple_rag_writer.logging.planning_log import PlanningLogWriter
+src/simple_rag_writer/planning/repl.py:21:    log_writer: PlanningLogWriter,
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:39:title: Implement PlanningLogWriter and MCP logging
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:41:  Implement PlanningLogWriter to capture planning sessions as Markdown logs
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:143:**Clarifying PlanningLogWriter requirements**
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:177:**Analyzing test strategy and PlanningLogWriter behavior**
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:180:src/simple_rag_writer/planning/repl.py:10:from simple_rag_writer.logging.planning_log import PlanningLogWriter
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:181:src/simple_rag_writer/planning/repl.py:21:    log_writer: PlanningLogWriter,
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:182:src/simple_rag_writer/logging/planning_log.py:26:class PlanningLogWriter:
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:183:src/simple_rag_writer/logging/planning_log.py:40:  ) -> "PlanningLogWriter":
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:184:src/simple_rag_writer/cli/plan.py:5:from simple_rag_writer.logging.planning_log import PlanningLogWriter
+codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log:185:src/simple_rag_writer/cli/plan.py:14:  log_writer = PlanningLogWriter.from_config(
+file update:
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Implementing placeholder and YAML logging enhancements**
+
+I’m planning to add a unique placeholder line in PlanningLogWriter’s header to later replace with actual models used upon closing the log file. I’ll also improve MCP event logging by importing PyYAML to serialize MCP items in a clean YAML block, carefully managing newlines and including only non-None fields to keep logs tidy. Additionally, I’ll enhance configuration options for including MCP events, ensure safe file operations on close, and add guards for repeated closes to solidify robustness.
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/logging/planning_log.py
+@@ -7,2 +7,4 @@
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+@@ -25,6 +27,18 @@
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+@@ -40,6 +54,7 @@
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+@@ -47,3 +62,8 @@
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+@@ -58,3 +78,3 @@
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+@@ -74,3 +94,9 @@
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+@@ -84,24 +110,8 @@
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+@@ -118 +128,40 @@
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/logging/planning_log.py
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Verifying log handling and serialization details**
+
+I’m making sure the `log_mcp_injection` method properly calls the serialization helper defined later, tracking import dependencies and ensuring correct behavior on multiple `close` calls. I’m also checking that the writer configuration disables writing correctly and that YAML dumping uses the right options, including Unicode and sorting. There’s special attention on placeholder consistency and test readiness before rerunning targeted tests.
+exec
+bash -lc 'pytest tests/test_planning_log_writer.py' in /var/home/rick/Development/llm_writer succeeded in 1.35s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/test_planning_log_writer.py ...                                    [100%]
+
+============================== 3 passed in 0.49s ===============================
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Running full test suite**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.55s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 24 items
+
+tests/test_cli_parser.py ..                                              [  8%]
+tests/test_config_loader.py ...                                          [ 20%]
+tests/test_llm_registry.py ....                                          [ 37%]
+tests/test_mcp_normalization.py .....                                    [ 58%]
+tests/test_planning_log_writer.py ...                                    [ 70%]
+tests/test_prompt_building.py ..                                         [ 79%]
+tests/test_runner_run_tasks.py ..                                        [ 87%]
+tests/test_task_loading.py ...                                           [100%]
+
+============================== 24 passed in 0.67s ==============================
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Marking plan steps as completed**
+Plan update
+  ✓ Add planning log writer tests that cover log directory creation, header, turn logging, and MCP injections per spec.
+  ✓ Update PlanningLogWriter implementation to satisfy new tests if needed.
+  ✓ Run pytest to verify all tests pass.
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Preparing final summary and verification**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+## main
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log.done
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log.done
+?? codex/LOGS/tasklog_07_implement_automated_task_runner_1763288534.log
+?? codex/LOGS/tasklog_07_implement_automated_task_runner_1763288534.log.done
+?? codex/LOGS/tasklog_08_implement_planning_log_writer_1763289052.log
+?? src/simple_rag_writer/__init__.py
+?? src/simple_rag_writer/__pycache__/
+?? src/simple_rag_writer/cli/
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Preparing to reference code changes with line numbers**
+exec
+bash -lc 'nl -ba src/simple_rag_writer/logging/planning_log.py' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+     1	from __future__ import annotations
+     2	
+     3	from dataclasses import dataclass, field
+     4	from datetime import datetime
+     5	from pathlib import Path
+     6	from typing import Any, Dict, List, Optional, Set
+     7	
+     8	import yaml
+     9	
+    10	from simple_rag_writer.config.models import AppConfig
+    11	
+    12	
+    13	@dataclass
+    14	class McpLogItem:
+    15	  idx: int
+    16	  server: str
+    17	  tool: str
+    18	  label: Optional[str]
+    19	  normalized_id: Optional[str]
+    20	  title: Optional[str]
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Preparing to reference code lines**
+exec
+bash -lc 'nl -ba tests/test_planning_log_writer.py' in /var/home/rick/Development/llm_writer succeeded in 37ms:
+     1	from __future__ import annotations
+     2	
+     3	from pathlib import Path
+     4	
+     5	import yaml
+     6	
+     7	from simple_rag_writer.config.models import (
+     8	  AppConfig,
+     9	  LoggingConfig,
+    10	  ModelConfig,
+    11	  PlanningLoggingConfig,
+    12	  ProviderConfig,
+    13	)
+    14	from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
+    15	
+    16	
+    17	def _make_config(
+    18	  tmp_path: Path,
+    19	  *,
+    20	  include_mcp_events: bool = True,
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+
+thinking
+**Summarizing planning log implementation and testing**
+
+I’m putting together a clear summary explaining the planning log writer changes, highlighting key code modifications with specific line references, the addition of YAML handling, and how models are tracked. I’ll note the new tests run with pytest and suggest practical next steps like hooking REPL MCP commands to ensure full logging integration. I’m also preparing a proposed commit message and listing the modified files to wrap it all up neatly.
+codex
+**Planning Logs**
+- `src/simple_rag_writer/logging/planning_log.py:31` now threads the planning logging flags through the writer, writes a header line with a unique placeholder, and rewrites it on `close()` so the sorted list of models used (or `<none>`) is captured at the top of each log via `_finalize_models_used` (`src/simple_rag_writer/logging/planning_log.py:125`).
+- MCP injections honor `include_mcp_events`/`mcp_inline`, emit the Markdown table, and dump the structured payload with `yaml.safe_dump`, so downstream tools can parse the fenced `mcp-yaml` block without lossy formatting (`src/simple_rag_writer/logging/planning_log.py:94` and `src/simple_rag_writer/logging/planning_log.py:132`).
+- Added regression tests that build configs against a temp log dir, assert the new header fields, validate the MCP table + YAML content, and confirm the section is suppressed when logging is disabled in `tests/test_planning_log_writer.py:46` and `tests/test_planning_log_writer.py:124`.
+
+**Meta**
+- Commit-ready message: `feat: implement planning log writer logging`
+- Modified files: `src/simple_rag_writer/logging/planning_log.py`, `tests/test_planning_log_writer.py`
+
+**Tests**
+- `pytest`
+
+Next: 1) When MCP commands are wired into the planning REPL, ensure they call `log_mcp_injection` so the new logging path captures real references.
+file update:
+diff --git a/src/simple_rag_writer/logging/planning_log.py b/src/simple_rag_writer/logging/planning_log.py
+index 4a2e0646cb525c8455d6b641b40ba264c441f071..5336882eade25c090e2db574c1be2d7edd37ca24
+--- a/src/simple_rag_writer/logging/planning_log.py
++++ b/src/simple_rag_writer/logging/planning_log.py
+@@ -5,6 +5,8 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ 
++import yaml
++
+ from simple_rag_writer.config.models import AppConfig
+ 
+ 
+@@ -23,10 +25,22 @@
+   metadata: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
++MODELS_PLACEHOLDER = "- Models used: __PENDING__"
++
++
+ class PlanningLogWriter:
+-  def __init__(self, path: Optional[Path], enabled: bool):
++  def __init__(
++    self,
++    path: Optional[Path],
++    enabled: bool,
++    *,
++    include_mcp_events: bool = True,
++    mcp_inline: bool = True,
++  ):
+     self._enabled = enabled and path is not None
+     self._path = path
++    self._include_mcp_events = include_mcp_events
++    self._mcp_inline = mcp_inline
+     self._fh = path.open("w", encoding="utf-8") if self._enabled else None
+     self._models_used: Set[str] = set()
+     self._header_written = False
+@@ -38,14 +52,20 @@
+     config_path: Optional[Path],
+     default_model_id: str,
+   ) -> "PlanningLogWriter":
+-    if not cfg.logging.planning.enabled:
++    planning_cfg = cfg.logging.planning
++    if not planning_cfg.enabled:
+       return cls(path=None, enabled=False)
+ 
+-    log_dir = Path(cfg.logging.planning.dir)
++    log_dir = Path(planning_cfg.dir)
+     log_dir.mkdir(parents=True, exist_ok=True)
+     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+     path = log_dir / f"plan-{ts}.md"
+-    writer = cls(path=path, enabled=True)
++    writer = cls(
++      path=path,
++      enabled=True,
++      include_mcp_events=planning_cfg.include_mcp_events,
++      mcp_inline=planning_cfg.mcp_inline,
++    )
+     writer._write_header(config_path, default_model_id)
+     return writer
+ 
+@@ -56,7 +76,7 @@
+     self._fh.write(f"# Planning Session — {ts_iso}\n\n")
+     self._fh.write(f"- Config: {config_path or '<unknown>'}\n")
+     self._fh.write(f"- Default model: {default_model_id}\n")
+-    self._fh.write("- Models used: (populated during session)\n\n")
++    self._fh.write(f"{MODELS_PLACEHOLDER}\n\n")
+     self._header_written = True
+ 
+   def log_model_used(self, model_id: str) -> None:
+@@ -72,7 +92,13 @@
+     self._fh.write(user_text + "\n\n")
+ 
+   def log_mcp_injection(self, turn_index: int, items: List[McpLogItem]) -> None:
+-    if not self._enabled or not self._fh:
++    if (
++      not self._enabled
++      or not self._fh
++      or not self._include_mcp_events
++      or not self._mcp_inline
++      or not items
++    ):
+       return
+     self._fh.write("### MCP References Injected\n\n")
+     self._fh.write("| idx | server | tool | label | normalized_id | title |\n")
+@@ -82,28 +108,12 @@
+         f"| {item.idx} | {item.server} | {item.tool} | {item.label or ''} | "
+         f"{item.normalized_id or ''} | {item.title or ''} |\n"
+       )
++    payload = {"references": [self._serialize_mcp_item(item) for item in items]}
++    yaml_text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+     self._fh.write("\n```mcp-yaml\n")
+-    self._fh.write("references:\n")
+-    for item in items:
+-      self._fh.write(f"  - idx: {item.idx}\n")
+-      self._fh.write(f"    server: {item.server}\n")
+-      self._fh.write(f"    tool: {item.tool}\n")
+-      if item.label:
+-        self._fh.write(f"    label: {item.label}\n")
+-      if item.normalized_id:
+-        self._fh.write(f"    normalized_id: {item.normalized_id}\n")
+-      if item.title:
+-        self._fh.write(f"    title: {item.title}\n")
+-      if item.type:
+-        self._fh.write(f"    type: {item.type}\n")
+-      if item.snippet:
+-        self._fh.write("    snippet: |\n      " + item.snippet + "\n")
+-      if item.body:
+-        self._fh.write("    body: |\n      " + item.body + "\n")
+-      if item.url:
+-        self._fh.write(f"    url: {item.url}\n")
+-      if item.metadata:
+-        self._fh.write(f"    metadata: {item.metadata}\n")
++    self._fh.write(yaml_text)
++    if not yaml_text.endswith("\n"):
++      self._fh.write("\n")
+     self._fh.write("```\n\n")
+ 
+   def end_turn(self, turn_index: int, assistant_text: str) -> None:
+@@ -116,3 +126,42 @@
+     if self._fh:
+       self._fh.close()
+       self._fh = None
++    if self._enabled and self._path and self._path.exists():
++      self._finalize_models_used()
++
++  def _serialize_mcp_item(self, item: McpLogItem) -> Dict[str, Any]:
++    data: Dict[str, Any] = {
++      "idx": item.idx,
++      "server": item.server,
++      "tool": item.tool,
++    }
++    if item.label is not None:
++      data["label"] = item.label
++    if item.normalized_id is not None:
++      data["normalized_id"] = item.normalized_id
++    if item.title is not None:
++      data["title"] = item.title
++    if item.type is not None:
++      data["type"] = item.type
++    if item.snippet is not None:
++      data["snippet"] = item.snippet
++    if item.body is not None:
++      data["body"] = item.body
++    if item.url is not None:
++      data["url"] = item.url
++    if item.metadata:
++      data["metadata"] = item.metadata
++    return data
++
++  def _finalize_models_used(self) -> None:
++    if not self._path:
++      return
++    text = self._path.read_text(encoding="utf-8")
++    if MODELS_PLACEHOLDER not in text:
++      return
++    if self._models_used:
++      models_text = ", ".join(sorted(self._models_used))
++    else:
++      models_text = "<none>"
++    updated = text.replace(MODELS_PLACEHOLDER, f"- Models used: {models_text}", 1)
++    self._path.write_text(updated, encoding="utf-8")
+diff --git a/tests/test_planning_log_writer.py b/tests/test_planning_log_writer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..adbfdbfa8610b057a0fb181be760177bad5f7978
+--- /dev/null
++++ b/tests/test_planning_log_writer.py
+@@ -0,0 +1,153 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import yaml
++
++from simple_rag_writer.config.models import (
++  AppConfig,
++  LoggingConfig,
++  ModelConfig,
++  PlanningLoggingConfig,
++  ProviderConfig,
++)
++from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
++
++
++def _make_config(
++  tmp_path: Path,
++  *,
++  include_mcp_events: bool = True,
++  mcp_inline: bool = True,
++) -> AppConfig:
++  planning_cfg = PlanningLoggingConfig(
++    enabled=True,
++    dir=str(tmp_path / "logs"),
++    include_mcp_events=include_mcp_events,
++    mcp_inline=mcp_inline,
++  )
++  return AppConfig(
++    default_model="writer-model",
++    providers={"local": ProviderConfig(type="openai", api_key="dummy")},
++    models=[
++      ModelConfig(id="writer-model", provider="local", model_name="writer"),
++      ModelConfig(id="editor-model", provider="local", model_name="editor"),
++    ],
++    logging=LoggingConfig(planning=planning_cfg),
++  )
++
++
++def _read_log_text(log_dir: Path) -> str:
++  files = list((log_dir).glob("plan-*.md"))
++  assert len(files) == 1, "expected exactly one planning log file"
++  return files[0].read_text(encoding="utf-8")
++
++
++def test_planning_log_writer_writes_header_and_turns(tmp_path: Path) -> None:
++  config = _make_config(tmp_path)
++  config_path = tmp_path / "config.yaml"
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=config_path,
++    default_model_id="writer-model",
++  )
++
++  writer.log_model_used("writer-model")
++  writer.log_model_used("editor-model")
++  writer.start_turn(1, "Need help outlining the chapter.")
++  writer.end_turn(1, "Let's start with an outline.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert log_text.startswith("# Planning Session — ")
++  assert f"- Config: {config_path}" in log_text
++  assert "- Default model: writer-model" in log_text
++  assert "- Models used: editor-model, writer-model" in log_text
++  assert "## Turn 1" in log_text
++  assert "**User:**" in log_text and "Need help outlining the chapter." in log_text
++  assert "**Assistant:**" in log_text and "Let's start with an outline." in log_text
++
++
++def test_planning_log_writer_logs_mcp_references_when_enabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=True, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++
++  items = [
++    McpLogItem(
++      idx=1,
++      server="notes",
++      tool="search",
++      label="Spec",
++      normalized_id="notes#1",
++      title="Notebook entry",
++      type="document",
++      snippet="First few lines",
++      body="Full body",
++      url="https://example.com/spec",
++      metadata={"score": 0.9},
++    )
++  ]
++  writer.start_turn(1, "Use the spec.")
++  writer.log_mcp_injection(1, items)
++  writer.end_turn(1, "Referencing the spec now.")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "### MCP References Injected" in log_text
++  assert "| 1 | notes | search | Spec | notes#1 | Notebook entry |" in log_text
++
++  fenced_block = log_text.split("```mcp-yaml", 1)[1].split("```", 1)[0]
++  data = yaml.safe_load(fenced_block)
++  assert data == {
++    "references": [
++      {
++        "idx": 1,
++        "server": "notes",
++        "tool": "search",
++        "label": "Spec",
++        "normalized_id": "notes#1",
++        "title": "Notebook entry",
++        "type": "document",
++        "snippet": "First few lines",
++        "body": "Full body",
++        "url": "https://example.com/spec",
++        "metadata": {"score": 0.9},
++      }
++    ]
++  }
++
++
++def test_planning_log_writer_skips_mcp_logging_when_disabled(tmp_path: Path) -> None:
++  config = _make_config(tmp_path, include_mcp_events=False, mcp_inline=True)
++  writer = PlanningLogWriter.from_config(
++    config,
++    config_path=tmp_path / "cfg.yaml",
++    default_model_id="writer-model",
++  )
++  writer.start_turn(1, "Hello")
++  writer.log_mcp_injection(
++    1,
++    [
++      McpLogItem(
++        idx=1,
++        server="notes",
++        tool="search",
++        label=None,
++        normalized_id=None,
++        title=None,
++        type=None,
++        snippet=None,
++        body=None,
++        url=None,
++      )
++    ],
++  )
++  writer.end_turn(1, "World")
++  writer.close()
++
++  log_text = _read_log_text(tmp_path / "logs")
++  assert "MCP References Injected" not in log_text
+
+tokens used
+85,118
+**Planning Logs**
+- `src/simple_rag_writer/logging/planning_log.py:31` now threads the planning logging flags through the writer, writes a header line with a unique placeholder, and rewrites it on `close()` so the sorted list of models used (or `<none>`) is captured at the top of each log via `_finalize_models_used` (`src/simple_rag_writer/logging/planning_log.py:125`).
+- MCP injections honor `include_mcp_events`/`mcp_inline`, emit the Markdown table, and dump the structured payload with `yaml.safe_dump`, so downstream tools can parse the fenced `mcp-yaml` block without lossy formatting (`src/simple_rag_writer/logging/planning_log.py:94` and `src/simple_rag_writer/logging/planning_log.py:132`).
+- Added regression tests that build configs against a temp log dir, assert the new header fields, validate the MCP table + YAML content, and confirm the section is suppressed when logging is disabled in `tests/test_planning_log_writer.py:46` and `tests/test_planning_log_writer.py:124`.
+
+**Meta**
+- Commit-ready message: `feat: implement planning log writer logging`
+- Modified files: `src/simple_rag_writer/logging/planning_log.py`, `tests/test_planning_log_writer.py`
+
+**Tests**
+- `pytest`
+
+Next: 1) When MCP commands are wired into the planning REPL, ensure they call `log_mcp_injection` so the new logging path captures real references.

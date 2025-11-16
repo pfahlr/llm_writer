@@ -1,0 +1,4441 @@
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c28-21b8-7573-b8e9-97fd9ca870c1
+--------
+user
+Implement the functionality described in codex/TASKS/05_implement_prompt_builders.yaml, then verify with any available tests.
+ERROR: MCP client for `mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `exa` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `context7-mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `vibe-check-mcp-server` failed to start: handshaking with MCP server failed: connection closed: initialize response
+
+thinking
+**Preparing to plan with TDD approach**
+exec
+bash -lc ls in /var/home/rick/Development/llm_writer succeeded in 38ms:
+AGENTS.md
+codex
+codex.toml
+pyproject.toml
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Reading the task details**
+exec
+bash -lc 'ls codex/TASKS' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+01_bootstrap_project_and_cli.yaml
+02_implement_config_models_and_loader.yaml
+03_implement_model_registry_and_litellm_integration.yaml
+04_define_task_spec_and_loader.yaml
+05_implement_prompt_builders.yaml
+06_implement_mcp_types_and_normalization.yaml
+07_implement_automated_task_runner.yaml
+08_implement_planning_log_writer.yaml
+09_implement_planning_repl.yaml
+10_implement_replay_support.yaml
+11_implement_mcp_prompt_policy_modes.yaml
+12_add_textual_source_browser_stub.yaml
+CODEX_TODO.md
+master_spec.yaml
+work_list
+
+thinking
+**Reading task file**
+exec
+bash -lc 'cat codex/TASKS/05_implement_prompt_builders.yaml' in /var/home/rick/Development/llm_writer succeeded in 37ms:
+id: 05
+filename: 05_implement_prompt_builders.yaml
+title: Implement planning and task prompt builders
+description: >
+  Implement prompt-building functions for planning mode and automated task
+  execution. These functions convert history, outline context, and reference
+  blobs into a single user-facing prompt string.
+
+dependencies:
+  - 03
+  - 04
+
+goals:
+  - build_planning_prompt() composes system-like instructions, optional MCP
+    context, recent history, and the latest user message.
+  - build_task_prompt() composes title/description/style, outline context,
+    reference blobs, and clear Markdown output instructions.
+
+artifacts:
+  - src/simple_rag_writer/prompts/planning.py
+
+thinking
+**Inspecting project structure and dependencies**
+exec
+bash -lc 'ls src/simple_rag_writer' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+cli
+config
+__init__.py
+llm
+logging
+mcp
+planning
+prompts
+__pycache__
+replay
+runner
+tasks
+
+thinking
+**Checking prompts folder**
+exec
+bash -lc 'ls src/simple_rag_writer/prompts' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+__init__.py
+planning.py
+__pycache__
+task_prompt.py
+
+thinking
+**Checking for incomplete files**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/prompts/planning.py" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+
+def build_planning_prompt(
+  history: List[Tuple[str, str]],
+  user_message: str,
+  mcp_context: Optional[str] = None,
+) -> str:
+  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+  parts: List[str] = []
+  parts.append(
+    "You are a planning assistant helping the user design and refine writing tasks.\n"
+    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+  )
+  if mcp_context:
+    parts.append("\n## Context from external sources\n")
+    parts.append(mcp_context)
+  parts.append("\n## Conversation so far\n")
+
+thinking
+**Checking for turn limits in AGENT spec**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/prompts/task_prompt.py" in /var/home/rick/Development/llm_writer succeeded in 39ms:
+from __future__ import annotations
+
+from typing import List, Optional
+
+from simple_rag_writer.tasks.models import TaskSpec
+
+
+def build_task_prompt(
+  task: TaskSpec,
+  outline_context: Optional[str],
+  reference_blobs: List[str],
+) -> str:
+  parts: List[str] = []
+  parts.append(f"# Task: {task.title}\n")
+  parts.append("## Description\n")
+  parts.append(task.description)
+  if task.style:
+    parts.append(f"\n\nStyle: {task.style}")
+  if outline_context:
+    parts.append("\n\n## Outline context\n")
+
+thinking
+**Reviewing feature completeness and test requirements**
+exec
+bash -lc 'rg -n "build_planning_prompt" -n src -n tests -n' in /var/home/rick/Development/llm_writer succeeded in 43ms:
+src/simple_rag_writer/prompts/planning.py:6:def build_planning_prompt(
+src/simple_rag_writer/planning/repl.py:11:from simple_rag_writer.prompts.planning import build_planning_prompt
+src/simple_rag_writer/planning/repl.py:56:      prompt = build_planning_prompt(self._history[-5:], line, self._mcp_context)
+
+thinking
+**Checking history limit enforcement**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/planning/repl.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+from rich.console import Console
+from rich.panel import Panel
+
+from simple_rag_writer.config.models import AppConfig
+from simple_rag_writer.llm.registry import ModelRegistry
+from simple_rag_writer.logging.planning_log import PlanningLogWriter
+from simple_rag_writer.prompts.planning import build_planning_prompt
+
+console = Console()
+
+
+class PlanningRepl:
+  def __init__(
+    self,
+    config: AppConfig,
+    model_registry: ModelRegistry,
+
+thinking
+**Reviewing prompt history handling**
+exec
+bash -lc 'rg -n "planning prompt" -n codex/master_spec.yaml' in /var/home/rick/Development/llm_writer exited 2 in 39ms:
+rg: codex/master_spec.yaml: IO error for operation on codex/master_spec.yaml: No such file or directory (os error 2)
+
+thinking
+**Verifying master_spec.yaml location**
+exec
+bash -lc 'ls codex' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+LOGS
+TASKS
+
+thinking
+**Exploring master_spec.yaml in TASKS**
+exec
+bash -lc 'rg -n "planning prompt" codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+10:    planning prompts from logs.
+83:          prepended to the planning prompt when the user calls /inject.
+786:            - Build planning prompt using:
+exec
+bash -lc "sed -n '700,860p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+        - name: "log_mcp_injection"
+          signature: "(turn_index: int, items: list[McpLogItem]) -> None"
+          description: >
+            If include_mcp_events is true, write MCP reference info inline:
+              - '### MCP References Injected'
+              - A small Markdown table summarizing each item:
+                  | idx | server | tool | label | normalized_id | title |
+              - A fenced '```mcp-yaml' block with a YAML document containing
+                full normalized payload for injected items (including body).
+        - name: "end_turn"
+          signature: "(turn_index: int, assistant_text: str) -> None"
+          description: >
+            Complete the turn by writing:
+              - '**Assistant:**' followed by assistant_text.
+        - name: "close"
+          signature: "() -> None"
+          description: >
+            Flush and close the file handle. Safe to call multiple times; later
+            calls are no-ops.
+  log_format:
+
+thinking
+**Searching for planning prompt details**
+exec
+bash -lc "sed -n '860,1020p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+    type: "McpClient"
+    methods:
+      - name: "call_tool"
+        params:
+          - name: "server_id"
+            type: string
+          - name: "tool_name"
+            type: string
+          - name: "params"
+            type: map<string, any>
+        returns: "McpToolResult"
+  result_type:
+    name: "McpToolResult"
+    fields:
+      server_id: string
+      tool_name: string
+      payload: any
+  normalization:
+    description: >
+      MCP tool results should be mapped into a common internal schema to
+
+thinking
+**Searching for prompt builder details**
+exec
+bash -lc 'rg -n "prompt" codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+10:    planning prompts from logs.
+37:      purpose: "Pretty console output, REPL prompts, tables/panels."
+78:      description: "Last 5 turns of user/assistant are included in each prompt."
+83:          prepended to the planning prompt when the user calls /inject.
+104:        - Builds a single prompt using task, context, and reference content.
+113:      Reconstruct and optionally re-run the exact prompt used for a specific
+119:        - System prompt used for planning.
+123:        - Show reconstructed prompt as plain text / Markdown.
+124:        - Optionally re-send the prompt to a chosen model for comparison.
+148:        description: "Replay a planning log turn and reconstruct the prompt."
+157:          - name: "--show-prompt"
+159:            help: "Print the reconstructed prompt to stdout."
+163:              Optional model id to re-run the reconstructed prompt against.
+250:    mcp_prompt_policy:
+255:        prompts. Supports raw-capped and summary modes with per-reference overrides.
+295:                per_type_prompts:
+300:                    summarization prompt. For example: "note", "paper",
+302:                    default_prompt is used.
+303:                default_prompt:
+307:                    Fallback summarization prompt used when no type-specific
+
+thinking
+**Examining specific lines 70-90**
+exec
+bash -lc "sed -n '60,140p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+  planning:
+    id: plan
+    description: >
+      Interactive back-and-forth chat for outlining, brainstorming, and
+      specifying tasks. Uses a selected model with a REPL and slash commands
+      for model switching and MCP integration.
+    features:
+      - Normal text sends a message to the current model.
+      - Slash commands (v1):
+        - "/models" — list all configured models, marking the active one.
+        - "/model <id>" — switch active model.
+        - "/quit" or "/q" — exit planning mode.
+      - Slash commands (MCP-related, v1 text-based):
+        - "/sources" — list MCP servers and tools (Rich table).
+        - "/use <server> <tool> \"query\" [limit]" — run an MCP tool and display results.
+        - "/inject <indices>" — inject selected MCP results into a context buffer.
+    context_handling:
+      history_window: 5
+      description: "Last 5 turns of user/assistant are included in each prompt."
+      mcp_context:
+
+thinking
+**Searching for prompt structure sections**
+exec
+bash -lc 'rg -n "Outline" codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer exited 1 in 40ms:
+
+
+thinking
+**Searching for task section**
+exec
+bash -lc 'rg -n "Task prompt" -n codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer exited 1 in 39ms:
+
+
+thinking
+**Seeking planning prompt section**
+exec
+bash -lc 'rg -n "Planning prompt" -n codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer exited 1 in 39ms:
+
+
+thinking
+**Searching for prompt builder definitions**
+exec
+bash -lc "sed -n '1,60p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+project:
+  id: simple_rag_writer
+  name: "Simple Rag Writer"
+  version: "0.4.0"
+  description: >
+    A slimmed-down, scriptable writing assistant that orchestrates multiple LLM
+    providers (OpenAI, OpenRouter, Gemini) and uses MCP servers as its only
+    retrieval/knowledge layer. It supports interactive planning chat, automated
+    execution of YAML-described writing tasks into Markdown, and replay of
+    planning prompts from logs.
+
+  goals:
+    - Provide a small, hackable core for multi-model writing workflows.
+    - Avoid bundling any vector DB; all retrieval happens via MCP servers.
+    - Make planning and execution symmetric: what you plan is what you run.
+    - Use argparse for CLI and Rich/Textual for UX where useful.
+    - Use litellm as the unified LLM adapter across providers.
+    - Make configuration “opt-in fancy”: sane defaults, but allow deep tuning.
+    - Support reproducible debugging via log replay.
+
+
+thinking
+**Searching for references in spec file**
+exec
+bash -lc 'rg -n "Reference" codex/TASKS/master_spec.yaml' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+447:      type: list<ReferenceSpec>
+451:      ReferenceSpec:
+704:              - '### MCP References Injected'
+733:            heading: "### MCP References Injected"
+817:                  - Use ReferenceSpec.item_type as a hint for normalized.type if server
+895:        ReferenceSpec.item_type as a hint/fallback.
+
+thinking
+**Searching for prompt instructions and test files**
+exec
+bash -lc 'ls tests' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+conftest.py
+__pycache__
+test_cli_parser.py
+test_config_loader.py
+test_llm_registry.py
+test_task_loading.py
+
+thinking
+**Preparing to add tests**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/tasks/models.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ContextSpec(BaseModel):
+  outline_path: Optional[str] = None
+  outline_id: Optional[str] = None
+
+
+class ReferenceCommon(BaseModel):
+  type: str
+  label: Optional[str] = None
+  item_type: Optional[str] = None
+  prompt_mode: Optional[str] = None
+  max_items: Optional[int] = None
+  max_chars: Optional[int] = None
+  summary_max_tokens: Optional[int] = None
+
+thinking
+**Preparing detailed test plan**
+Plan update
+  → Add regression tests for planning and task prompt builders per task spec.
+  • Implement planning and task prompt builders to satisfy new tests and structure requirements.
+  • Run pytest to verify everything passes.
+
+thinking
+**Designing prompt-building tests**
+exec
+bash -lc 'rg -n "Context from external sources" -n' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+src/simple_rag_writer/prompts/planning.py:18:    parts.append("\n## Context from external sources\n")
+codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log:125:    parts.append("\n## Context from external sources\n")
+codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log:405:bash -lc 'rg -n "Context from external sources" -n' in /var/home/rick/Development/llm_writer
+
+thinking
+**Reviewing task logs for prompt design**
+exec
+bash -lc "sed -n '1,200p' codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c28-21b8-7573-b8e9-97fd9ca870c1
+--------
+user
+Implement the functionality described in codex/TASKS/05_implement_prompt_builders.yaml, then verify with any available tests.
+ERROR: MCP client for `mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `exa` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `context7-mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `vibe-check-mcp-server` failed to start: handshaking with MCP server failed: connection closed: initialize response
+
+thinking
+**Preparing to plan with TDD approach**
+
+
+thinking
+**Designing prompt building and related tests**
+
+I’m focusing on ensuring prompt-building functions limit conversation history to the last 5 turns, include optional MCP context, and maintain section headings. I plan to create tests that confirm old history entries are excluded and new message and context sections appear correctly, then update the implementation to pass these tests consistently.
+thinking
+**Preparing tests for prompt components**
+file update
+A /var/home/rick/Development/llm_writer/tests/test_prompt_building.py
+from __future__ import annotations
+
+from simple_rag_writer.prompts.planning import build_planning_prompt
+from simple_rag_writer.prompts.task_prompt import build_task_prompt
+from simple_rag_writer.tasks.models import TaskSpec
+
+
+def test_planning_prompt_includes_sections_and_limits_history() -> None:
+  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
+  prompt = build_planning_prompt(
+    history=history,
+    user_message="Help me plan a task about research summaries.",
+    mcp_context="Context from MCP server",
+  )
+
+  assert "You are a planning assistant" in prompt
+  assert "## Context from external sources" in prompt
+  assert "Context from MCP server" in prompt
+  assert "## Conversation so far" in prompt
+  assert "## New message" in prompt
+  assert "Help me plan a task about research summaries." in prompt
+
+  assert "User: user 1" not in prompt
+  assert "Assistant: assistant 1" not in prompt
+  assert "User: user 2" not in prompt
+  assert "Assistant: assistant 2" not in prompt
+
+  for i in range(3, 8):
+    assert f"User: user {i}" in prompt
+    assert f"Assistant: assistant {i}" in prompt
+
+
+def test_task_prompt_includes_outline_style_and_references() -> None:
+  task = TaskSpec(
+    title="Write section on evaluation methods",
+    id="eval-methods",
+    description="Summarize evaluation approaches for retrieval-augmented generation.",
+    output="drafts/eval.md",
+    style="Friendly but precise",
+  )
+  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
+  reference_blobs = [
+    "Reference A details background on benchmarks.",
+    "Reference B includes expert interview quotes.",
+  ]
+
+  prompt = build_task_prompt(task, outline_context, reference_blobs)
+
+  assert "# Task: Write section on evaluation methods" in prompt
+  assert "## Description" in prompt
+  assert task.description in prompt
+  assert "Style: Friendly but precise" in prompt
+  assert "## Outline context" in prompt
+  assert outline_context in prompt
+  assert "## Reference material" in prompt
+  for idx, blob in enumerate(reference_blobs, start=1):
+    assert f"### Reference {idx}" in prompt
+    assert blob in prompt
+  assert "## Instructions" in prompt
+  assert "Write a complete draft in Markdown" in prompt
+apply_patch(auto_approved=true) exited 0 in 5ms:
+Success. Updated the following files:
+A tests/test_prompt_building.py
+file update:
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+file update:
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Running targeted tests**
+exec
+bash -lc 'pytest tests/test_prompt_building.py' in /var/home/rick/Development/llm_writer exited 1 in 1.20s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items
+
+tests/test_prompt_building.py F.                                         [100%]
+
+=================================== FAILURES ===================================
+__________ test_planning_prompt_includes_sections_and_limits_history ___________
+
+    def test_planning_prompt_includes_sections_and_limits_history() -> None:
+      history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
+      prompt = build_planning_prompt(
+        history=history,
+        user_message="Help me plan a task about research summaries.",
+        mcp_context="Context from MCP server",
+      )
+file update:
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Implementing limited conversation history in planning prompt**
+
+I'm updating the planning prompt builder to keep only the most recent N conversation turns, defaulting to 5, by adding a `history_window` parameter with a sane default. I'll carefully restructure string assembly to maintain spacing and headings compatible with existing tests, ensuring blank lines separate sections and that trimming trailing lines avoids extra blank spaces. This should keep outputs tidy and compatible while encapsulating history slicing inside the builder for clearer responsibilities.
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/prompts/planning.py
+@@ -4,2 +4,4 @@
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+@@ -9,17 +11,48 @@
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(part for part in parts if part != "" or parts.count("") == 0).strip()
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/prompts/planning.py
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..5aeccd2174de4771434d6bed3803d98703477478
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(part for part in parts if part != "" or parts.count("") == 0).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..5aeccd2174de4771434d6bed3803d98703477478
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(part for part in parts if part != "" or parts.count("") == 0).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Optimizing blank line handling**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/prompts/planning.py
+@@ -57,2 +57,2 @@
+ 
+-  return "\n".join(part for part in parts if part != "" or parts.count("") == 0).strip()
++  return "\n".join(parts).strip()
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/prompts/planning.py
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..ae474999ca0024a04f02f10b9ad7156bf4e72fd5
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..ae474999ca0024a04f02f10b9ad7156bf4e72fd5
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Analyzing prompt parts construction**
+exec
+bash -lc 'pytest tests/test_prompt_building.py' in /var/home/rick/Development/llm_writer succeeded in 1.31s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items
+
+tests/test_prompt_building.py ..                                         [100%]
+
+============================== 2 passed in 0.49s ===============================
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..ae474999ca0024a04f02f10b9ad7156bf4e72fd5
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Running full pytest suite**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.43s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 14 items
+
+tests/test_cli_parser.py ..                                              [ 14%]
+tests/test_config_loader.py ...                                          [ 35%]
+tests/test_llm_registry.py ....                                          [ 64%]
+tests/test_prompt_building.py ..                                         [ 78%]
+tests/test_task_loading.py ...                                           [100%]
+
+============================== 14 passed in 0.61s ==============================
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..ae474999ca0024a04f02f10b9ad7156bf4e72fd5
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Updating plan statuses**
+Plan update
+  ✓ Add regression tests for planning and task prompt builders per task spec.
+  ✓ Implement planning and task prompt builders to satisfy new tests and structure requirements.
+  ✓ Run pytest to verify everything passes.
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..ae474999ca0024a04f02f10b9ad7156bf4e72fd5
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Preparing final response details**
+exec
+bash -lc 'nl -ba src/simple_rag_writer/prompts/planning.py' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+     1	from __future__ import annotations
+     2	
+     3	from typing import List, Optional, Tuple
+     4	
+     5	DEFAULT_HISTORY_WINDOW = 5
+     6	
+     7	
+     8	def build_planning_prompt(
+     9	  history: List[Tuple[str, str]],
+    10	  user_message: str,
+    11	  mcp_context: Optional[str] = None,
+    12	  history_window: int = DEFAULT_HISTORY_WINDOW,
+    13	) -> str:
+    14	  """Build planning prompt from optional MCP context, recent history, and new user text."""
+    15	  window = max(history_window, 0)
+    16	  recent_history = history[-window:] if window else []
+    17	
+    18	  parts: List[str] = [
+    19	    (
+    20	      "You are a planning assistant helping the user design and refine writing tasks.\n"
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..ae474999ca0024a04f02f10b9ad7156bf4e72fd5
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,57 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++    if parts[-1] == "":
++      parts.pop()
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Cleaning up unreachable code**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/prompts/planning.py
+@@ -43,4 +43,2 @@
+       parts.append(f"Assistant: {assistant_text}")
+-    if parts[-1] == "":
+-      parts.pop()
+   else:
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/prompts/planning.py
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Rerunning targeted tests**
+exec
+bash -lc 'pytest tests/test_prompt_building.py' in /var/home/rick/Development/llm_writer succeeded in 1.22s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 2 items
+
+tests/test_prompt_building.py ..                                         [100%]
+
+============================== 2 passed in 0.42s ===============================
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Rerunning full test suite**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.44s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 14 items
+
+tests/test_cli_parser.py ..                                              [ 14%]
+tests/test_config_loader.py ...                                          [ 35%]
+tests/test_llm_registry.py ....                                          [ 64%]
+tests/test_prompt_building.py ..                                         [ 78%]
+tests/test_task_loading.py ...                                           [100%]
+
+============================== 14 passed in 0.61s ==============================
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Verifying line number commands**
+exec
+bash -lc 'nl -ba src/simple_rag_writer/prompts/planning.py' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+     1	from __future__ import annotations
+     2	
+     3	from typing import List, Optional, Tuple
+     4	
+     5	DEFAULT_HISTORY_WINDOW = 5
+     6	
+     7	
+     8	def build_planning_prompt(
+     9	  history: List[Tuple[str, str]],
+    10	  user_message: str,
+    11	  mcp_context: Optional[str] = None,
+    12	  history_window: int = DEFAULT_HISTORY_WINDOW,
+    13	) -> str:
+    14	  """Build planning prompt from optional MCP context, recent history, and new user text."""
+    15	  window = max(history_window, 0)
+    16	  recent_history = history[-window:] if window else []
+    17	
+    18	  parts: List[str] = [
+    19	    (
+    20	      "You are a planning assistant helping the user design and refine writing tasks.\n"
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Summarizing changes and preparing commit**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+## main
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? src/
+?? tests/__pycache__/
+?? tests/conftest.py
+?? tests/test_cli_parser.py
+?? tests/test_prompt_building.py
+?? tests/test_task_loading.py
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Investigating untracked repository status**
+exec
+bash -lc 'ls -a' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+.
+..
+AGENTS.md
+codex
+codex.toml
+.git
+.gitignore
+pyproject.toml
+.pytest_cache
+README.md
+requirements.txt
+src
+tests
+venv
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Evaluating git commit feasibility**
+
+I'm sorting through a complex git situation where the repo seems mostly untracked despite having a main branch. I'm weighing whether to commit just the changed files or skip committing altogether to avoid messing up the untracked files, all while trying to respect instructions that request a final commit message. It’s a tricky balance!
+exec
+bash -lc 'git rev-parse HEAD' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+64e87721f5f3d3e770acbd366e9c7a4d92333e95
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Investigating git untracked directories issue**
+exec
+bash -lc 'git ls-tree -r HEAD | head' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+100644 blob 09dd1da87097b492818e7f83dd749e2161e5ef13	.gitignore
+100644 blob 77acdca06a33866faba0c80e3be47ca7c27a6e45	AGENTS.md
+100644 blob 83cf1a832113a44f0cafa4b8061f60ea7f25171f	README.md
+100644 blob 4c30266e9e37a6fb9f6cda89ec647fc9fc6dbe95	codex.toml
+100644 blob 8a81875c8a20805b0103f4602d204879bdedcb22	codex/LOGS/codex_run_2025-11-16_04-50-49.log
+100644 blob 04182936f4c97099195cf9748f709aac26d54724	codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763286649.log
+100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391	codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763286649.log.done
+100644 blob 076533b92c98cf1f2bf036b014e2ec23a4ebbf85	codex/TASKS/01_bootstrap_project_and_cli.yaml
+100644 blob b5aced75f3b378e3a827fc5a648cb71ed0bacaa8	codex/TASKS/02_implement_config_models_and_loader.yaml
+100644 blob f80a2ee26ae979381512ea262bf14261175573a3	codex/TASKS/03_implement_model_registry_and_litellm_integration.yaml
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Deciding on selective staging and committing**
+exec
+bash -lc 'git add src/simple_rag_writer/prompts/planning.py tests/test_prompt_building.py' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Checking git staging status**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+## main
+A  src/simple_rag_writer/prompts/planning.py
+A  tests/test_prompt_building.py
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? src/simple_rag_writer/__init__.py
+?? src/simple_rag_writer/__pycache__/
+?? src/simple_rag_writer/cli/
+?? src/simple_rag_writer/config/
+?? src/simple_rag_writer/llm/
+?? src/simple_rag_writer/logging/
+?? src/simple_rag_writer/mcp/
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Preparing commit for prompt builders**
+exec
+bash -lc 'git diff --cached' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+new file mode 100644
+index 0000000..a8298ff
+--- /dev/null
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -0,0 +1,56 @@
++from __future__ import annotations
++
++from typing import List, Optional, Tuple
++
++DEFAULT_HISTORY_WINDOW = 5
++
++
++def build_planning_prompt(
++  history: List[Tuple[str, str]],
++  user_message: str,
++  mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
++) -> str:
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Committing new prompt builder files**
+exec
+bash -lc 'git commit -m "feat: implement prompt builders"' in /var/home/rick/Development/llm_writer succeeded in 79ms:
+[main 0ec7626] feat: implement prompt builders
+ 2 files changed, 116 insertions(+)
+ create mode 100644 src/simple_rag_writer/prompts/planning.py
+ create mode 100644 tests/test_prompt_building.py
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Checking git status**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+## main
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? src/simple_rag_writer/__init__.py
+?? src/simple_rag_writer/__pycache__/
+?? src/simple_rag_writer/cli/
+?? src/simple_rag_writer/config/
+?? src/simple_rag_writer/llm/
+?? src/simple_rag_writer/logging/
+?? src/simple_rag_writer/mcp/
+?? src/simple_rag_writer/planning/
+?? src/simple_rag_writer/prompts/__init__.py
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+
+thinking
+**Finalizing commit summary and report**
+
+I’m putting together a clear, structured final response highlighting key code changes with exact start lines, test coverage, commit details, and testing commands. I’ll also include a concise next-step suggestion to help the user verify the new prompt formatting via the CLI.
+codex
+**Prompt Builders**
+- `src/simple_rag_writer/prompts/planning.py:5` now defines `DEFAULT_HISTORY_WINDOW`, trims any provided history to the last N turns, and assembles a consistent Markdown prompt with system guidance, optional MCP context, capped conversation history, and the fresh user message.
+- `tests/test_prompt_building.py:1` adds regression tests that assert the planning prompt’s sections/history cap and ensure task prompts surface style, outline context, numbered reference blobs, and the Markdown drafting instructions.
+
+**Tests**
+- `pytest`
+
+**Task Report**
+- Commit: `feat: implement prompt builders`
+- Files: `src/simple_rag_writer/prompts/planning.py`, `tests/test_prompt_building.py`
+- Behavior changes: planning prompts always limit conversation context to the configured window, and both planning/task prompt builders are now guarded by explicit structure tests.
+
+**Next Steps**
+- Run `srw plan` interactively to eyeball the new prompt formatting and confirm it feels good in the REPL.
+file update:
+diff --git a/src/simple_rag_writer/prompts/planning.py b/src/simple_rag_writer/prompts/planning.py
+index 449e4a3208e6f08a4a25e75ce9e1d933f7bd7fbd..a8298ff3effa26beabacd4c860770442d0b28be0
+--- a/src/simple_rag_writer/prompts/planning.py
++++ b/src/simple_rag_writer/prompts/planning.py
+@@ -2,24 +2,55 @@
+ 
+ from typing import List, Optional, Tuple
+ 
++DEFAULT_HISTORY_WINDOW = 5
++
+ 
+ def build_planning_prompt(
+   history: List[Tuple[str, str]],
+   user_message: str,
+   mcp_context: Optional[str] = None,
++  history_window: int = DEFAULT_HISTORY_WINDOW,
+ ) -> str:
+-  """Build planning-mode prompt from history, optional MCP context, and the new message."""
+-  parts: List[str] = []
+-  parts.append(
+-    "You are a planning assistant helping the user design and refine writing tasks.\n"
+-    "Respond concisely but clearly, and propose concrete steps or task specs when useful."
+-  )
++  """Build planning prompt from optional MCP context, recent history, and new user text."""
++  window = max(history_window, 0)
++  recent_history = history[-window:] if window else []
++
++  parts: List[str] = [
++    (
++      "You are a planning assistant helping the user design and refine writing tasks.\n"
++      "Respond concisely but clearly, and propose concrete steps or task specs when useful."
++    )
++  ]
++
+   if mcp_context:
+-    parts.append("\n## Context from external sources\n")
+-    parts.append(mcp_context)
+-  parts.append("\n## Conversation so far\n")
+-  for u, a in history:
+-    parts.append(f"User: {u}\nAssistant: {a}\n")
+-  parts.append("\n## New message\n")
+-  parts.append(user_message)
+-  return "\n".join(parts)
++    parts.extend(
++      [
++        "",
++        "## Context from external sources",
++        mcp_context.strip(),
++      ]
++    )
++
++  history_heading = "## Conversation so far"
++  if window:
++    history_heading += f" (last {window} turns)"
++  parts.append("")
++  parts.append(history_heading)
++  if recent_history:
++    for user_text, assistant_text in recent_history:
++      parts.append("")
++      parts.append(f"User: {user_text}")
++      parts.append(f"Assistant: {assistant_text}")
++  else:
++    parts.append("")
++    parts.append("No previous conversation yet.")
++
++  parts.extend(
++    [
++      "",
++      "## New message",
++      user_message.strip(),
++    ]
++  )
++
++  return "\n".join(parts).strip()
+diff --git a/tests/test_prompt_building.py b/tests/test_prompt_building.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27abba66af096c12786ef5ab8c75c323ff2aff30
+--- /dev/null
++++ b/tests/test_prompt_building.py
+@@ -0,0 +1,60 @@
++from __future__ import annotations
++
++from simple_rag_writer.prompts.planning import build_planning_prompt
++from simple_rag_writer.prompts.task_prompt import build_task_prompt
++from simple_rag_writer.tasks.models import TaskSpec
++
++
++def test_planning_prompt_includes_sections_and_limits_history() -> None:
++  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
++  prompt = build_planning_prompt(
++    history=history,
++    user_message="Help me plan a task about research summaries.",
++    mcp_context="Context from MCP server",
++  )
++
++  assert "You are a planning assistant" in prompt
++  assert "## Context from external sources" in prompt
++  assert "Context from MCP server" in prompt
++  assert "## Conversation so far" in prompt
++  assert "## New message" in prompt
++  assert "Help me plan a task about research summaries." in prompt
++
++  assert "User: user 1" not in prompt
++  assert "Assistant: assistant 1" not in prompt
++  assert "User: user 2" not in prompt
++  assert "Assistant: assistant 2" not in prompt
++
++  for i in range(3, 8):
++    assert f"User: user {i}" in prompt
++    assert f"Assistant: assistant {i}" in prompt
++
++
++def test_task_prompt_includes_outline_style_and_references() -> None:
++  task = TaskSpec(
++    title="Write section on evaluation methods",
++    id="eval-methods",
++    description="Summarize evaluation approaches for retrieval-augmented generation.",
++    output="drafts/eval.md",
++    style="Friendly but precise",
++  )
++  outline_context = "Focus on comparison of automatic metrics vs. qualitative review."
++  reference_blobs = [
++    "Reference A details background on benchmarks.",
++    "Reference B includes expert interview quotes.",
++  ]
++
++  prompt = build_task_prompt(task, outline_context, reference_blobs)
++
++  assert "# Task: Write section on evaluation methods" in prompt
++  assert "## Description" in prompt
++  assert task.description in prompt
++  assert "Style: Friendly but precise" in prompt
++  assert "## Outline context" in prompt
++  assert outline_context in prompt
++  assert "## Reference material" in prompt
++  for idx, blob in enumerate(reference_blobs, start=1):
++    assert f"### Reference {idx}" in prompt
++    assert blob in prompt
++  assert "## Instructions" in prompt
++  assert "Write a complete draft in Markdown" in prompt
+
+tokens used
+69,252
+**Prompt Builders**
+- `src/simple_rag_writer/prompts/planning.py:5` now defines `DEFAULT_HISTORY_WINDOW`, trims any provided history to the last N turns, and assembles a consistent Markdown prompt with system guidance, optional MCP context, capped conversation history, and the fresh user message.
+- `tests/test_prompt_building.py:1` adds regression tests that assert the planning prompt’s sections/history cap and ensure task prompts surface style, outline context, numbered reference blobs, and the Markdown drafting instructions.
+
+**Tests**
+- `pytest`
+
+**Task Report**
+- Commit: `feat: implement prompt builders`
+- Files: `src/simple_rag_writer/prompts/planning.py`, `tests/test_prompt_building.py`
+- Behavior changes: planning prompts always limit conversation context to the configured window, and both planning/task prompt builders are now guarded by explicit structure tests.
+
+**Next Steps**
+- Run `srw plan` interactively to eyeball the new prompt formatting and confirm it feels good in the REPL.

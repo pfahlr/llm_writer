@@ -1,0 +1,1963 @@
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c2d-9a47-7b20-8abe-c15a2c7cd253
+--------
+user
+Implement the functionality described in codex/TASKS/06_implement_mcp_types_and_normalization.yaml, then verify with any available tests.
+ERROR: MCP client for `vibe-check-mcp-server` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `exa` failed to start: handshaking with MCP server failed: connection closed: initialize response
+ERROR: MCP client for `context7-mcp` failed to start: handshaking with MCP server failed: connection closed: initialize response
+
+thinking
+**Planning approach and inspecting repo**
+exec
+bash -lc ls in /var/home/rick/Development/llm_writer succeeded in 39ms:
+AGENTS.md
+codex
+codex.toml
+pyproject.toml
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Reading the task file**
+exec
+bash -lc 'ls codex/TASKS' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+01_bootstrap_project_and_cli.yaml
+02_implement_config_models_and_loader.yaml
+03_implement_model_registry_and_litellm_integration.yaml
+04_define_task_spec_and_loader.yaml
+05_implement_prompt_builders.yaml
+06_implement_mcp_types_and_normalization.yaml
+07_implement_automated_task_runner.yaml
+08_implement_planning_log_writer.yaml
+09_implement_planning_repl.yaml
+10_implement_replay_support.yaml
+11_implement_mcp_prompt_policy_modes.yaml
+12_add_textual_source_browser_stub.yaml
+CODEX_TODO.md
+master_spec.yaml
+work_list
+
+thinking
+**Opening task 06**
+exec
+bash -lc 'cat codex/TASKS/06_implement_mcp_types_and_normalization.yaml' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+id: 06
+filename: 06_implement_mcp_types_and_normalization.yaml
+title: Implement MCP types and normalization helpers
+description: >
+  Implement the core MCP types (McpToolResult, NormalizedItem) and the
+  normalize_payload() helper that converts arbitrary MCP payloads into
+  a uniform structure suitable for summarization and prompt injection.
+
+dependencies:
+  - 02
+
+goals:
+  - NormalizedItem supports id, type, title, snippet, body, url, metadata.
+  - normalize_payload() handles strings, lists of strings, lists of dicts,
+    and falls back to stringified representation for unknown payloads.
+
+artifacts:
+  - src/simple_rag_writer/mcp/types.py
+  - src/simple_rag_writer/mcp/normalization.py
+  - tests/test_mcp_normalization.py
+
+thinking
+**Preparing to inspect dependencies and plan**
+Plan update
+  → Review existing MCP modules and task requirements; inspect current files for context.
+  • Add failing tests for MCP normalization behavior per spec.
+  • Implement MCP types and normalization helpers to satisfy tests; run pytest.
+
+thinking
+**Inspecting source structure**
+exec
+bash -lc 'ls src/simple_rag_writer' in /var/home/rick/Development/llm_writer succeeded in 48ms:
+cli
+config
+__init__.py
+llm
+logging
+mcp
+planning
+prompts
+__pycache__
+replay
+runner
+tasks
+
+thinking
+**Inspecting mcp folder**
+exec
+bash -lc 'ls src/simple_rag_writer/mcp' in /var/home/rick/Development/llm_writer succeeded in 37ms:
+client.py
+__init__.py
+normalization.py
+__pycache__
+types.py
+
+thinking
+**Reviewing files**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/mcp/types.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, Field
+
+
+class McpToolResult(BaseModel):
+  server_id: str
+  tool_name: str
+  payload: Any
+
+
+class NormalizedItem(BaseModel):
+  id: Optional[str] = None
+  type: Optional[str] = None
+  title: Optional[str] = None
+  snippet: Optional[str] = None
+  body: Optional[str] = None
+  url: Optional[str] = None
+
+thinking
+**Checking existing type implementations**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/mcp/normalization.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from .types import NormalizedItem
+
+
+def normalize_payload(
+  payload: Any,
+  item_type_hint: Optional[str] = None,
+) -> List[NormalizedItem]:
+  """Convert raw MCP payload into a list of NormalizedItem."""
+  items: List[NormalizedItem] = []
+
+  if isinstance(payload, str):
+    items.append(NormalizedItem(body=payload, type=item_type_hint))
+  elif isinstance(payload, list):
+    for idx, entry in enumerate(payload):
+      if isinstance(entry, str):
+        items.append(NormalizedItem(id=str(idx), body=entry, type=item_type_hint))
+
+thinking
+**Verifying implementation and tests**
+exec
+bash -lc 'rg -n "Normalized" -n src/simple_rag_writer -g"*.py"' in /var/home/rick/Development/llm_writer succeeded in 43ms:
+src/simple_rag_writer/mcp/normalization.py:5:from .types import NormalizedItem
+src/simple_rag_writer/mcp/normalization.py:11:) -> List[NormalizedItem]:
+src/simple_rag_writer/mcp/normalization.py:12:  """Convert raw MCP payload into a list of NormalizedItem."""
+src/simple_rag_writer/mcp/normalization.py:13:  items: List[NormalizedItem] = []
+src/simple_rag_writer/mcp/normalization.py:16:    items.append(NormalizedItem(body=payload, type=item_type_hint))
+src/simple_rag_writer/mcp/normalization.py:20:        items.append(NormalizedItem(id=str(idx), body=entry, type=item_type_hint))
+src/simple_rag_writer/mcp/normalization.py:23:          NormalizedItem(
+src/simple_rag_writer/mcp/normalization.py:38:    items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+src/simple_rag_writer/mcp/types.py:14:class NormalizedItem(BaseModel):
+
+thinking
+**Checking for tests**
+exec
+bash -lc 'ls tests' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+conftest.py
+__pycache__
+test_cli_parser.py
+test_config_loader.py
+test_llm_registry.py
+test_prompt_building.py
+test_task_loading.py
+
+thinking
+**Considering TDD test strategy**
+Plan update
+  ✓ Review existing MCP modules and task requirements; inspect current files for context.
+  → Add failing tests for MCP normalization behavior per spec.
+  • Implement MCP types and normalization helpers to satisfy tests; run pytest.
+
+thinking
+**Preparing test file creation**
+exec
+bash -lc "sed -n '1,200p' tests/test_prompt_building.py" in /var/home/rick/Development/llm_writer succeeded in 46ms:
+from __future__ import annotations
+
+from simple_rag_writer.prompts.planning import build_planning_prompt
+from simple_rag_writer.prompts.task_prompt import build_task_prompt
+from simple_rag_writer.tasks.models import TaskSpec
+
+
+def test_planning_prompt_includes_sections_and_limits_history() -> None:
+  history = [(f"user {i}", f"assistant {i}") for i in range(1, 8)]
+  prompt = build_planning_prompt(
+    history=history,
+    user_message="Help me plan a task about research summaries.",
+    mcp_context="Context from MCP server",
+  )
+
+  assert "You are a planning assistant" in prompt
+  assert "## Context from external sources" in prompt
+  assert "Context from MCP server" in prompt
+  assert "## Conversation so far" in prompt
+  assert "## New message" in prompt
+
+thinking
+**Planning normalization tests**
+file update
+A /var/home/rick/Development/llm_writer/tests/test_mcp_normalization.py
+from __future__ import annotations
+
+from simple_rag_writer.mcp.normalization import normalize_payload
+
+
+def test_string_payload_normalizes_to_single_item() -> None:
+  result = normalize_payload("plain text blob", item_type_hint="note")
+
+  assert len(result) == 1
+  item = result[0]
+  assert item.type == "note"
+  assert item.body == "plain text blob"
+  assert item.metadata == {}
+
+
+def test_list_of_strings_gets_index_ids() -> None:
+  result = normalize_payload(["alpha", "beta"])
+
+  assert [item.id for item in result] == ["0", "1"]
+  assert [item.body for item in result] == ["alpha", "beta"]
+
+
+def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
+  payload = [
+    {
+      "id": "custom",
+      "type": "document",
+      "title": "Doc Title",
+      "snippet": "Short snippet",
+      "body": "Full body text",
+      "url": "https://example.test/doc",
+      "extra": 123,
+    }
+  ]
+
+  result = normalize_payload(payload, item_type_hint="fallback")
+
+  assert len(result) == 1
+  item = result[0]
+  assert item.id == "custom"
+  assert item.type == "document"
+  assert item.title == "Doc Title"
+  assert item.snippet == "Short snippet"
+  assert item.body == "Full body text"
+  assert item.url == "https://example.test/doc"
+  assert item.metadata == {"extra": 123}
+
+
+def test_unknown_payload_is_stringified() -> None:
+  class Dummy:
+    def __str__(self) -> str:  # pragma: no cover - trivial
+      return "Dummy payload"
+
+  [item] = normalize_payload(Dummy())
+  assert item.body == "Dummy payload"
+  assert item.metadata == {}
+apply_patch(auto_approved=true) exited 0 in 5ms:
+Success. Updated the following files:
+A tests/test_mcp_normalization.py
+file update:
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0e31d3d5dd24f5eda43fa19a49d408988590fa3
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,56 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+file update:
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0e31d3d5dd24f5eda43fa19a49d408988590fa3
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,56 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Verifying indentation and extending tests for payload normalization**
+
+I'm checking that the tests use 2-space indentation consistently and confirming new files follow this style. I'm considering augmenting the tests to handle cases where list entries have unknown types by stringifying them, since current logic skips these, which seems like a gap in the spec coverage. Adding a test with a mixed list payload containing strings, dicts, and unknown types should help ensure this fallback behavior and satisfy test-driven development goals.
+file update
+M /var/home/rick/Development/llm_writer/tests/test_mcp_normalization.py
+@@ -48,2 +48,10 @@
+ 
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
+ def test_unknown_payload_is_stringified() -> None:
+apply_patch(auto_approved=true) exited 0 in 5ms:
+Success. Updated the following files:
+M tests/test_mcp_normalization.py
+file update:
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+file update:
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Preparing to run targeted tests**
+exec
+bash -lc 'pytest tests/test_mcp_normalization.py' in /var/home/rick/Development/llm_writer exited 1 in 1.25s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests/test_mcp_normalization.py ...F.                                    [100%]
+
+=================================== FAILURES ===================================
+_____________ test_list_entries_with_unknown_type_are_stringified ______________
+
+    def test_list_entries_with_unknown_type_are_stringified() -> None:
+      result = normalize_payload(["alpha", 7])
+    
+>     assert len(result) == 2
+E     AssertionError: assert 1 == 2
+E      +  where 1 = len([NormalizedItem(id='0', type=None, title=None, snippet=None, body='alpha', url=None, metadata={})])
+
+file update:
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Improving list normalization handling**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/mcp/normalization.py
+@@ -36,2 +36,10 @@
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+apply_patch(auto_approved=true) exited 0 in 5ms:
+Success. Updated the following files:
+M src/simple_rag_writer/mcp/normalization.py
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Preparing to run tests**
+exec
+bash -lc 'pytest tests/test_mcp_normalization.py' in /var/home/rick/Development/llm_writer succeeded in 1.23s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests/test_mcp_normalization.py .....                                    [100%]
+
+============================== 5 passed in 0.41s ===============================
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Running full pytest suite**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.41s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 19 items
+
+tests/test_cli_parser.py ..                                              [ 10%]
+tests/test_config_loader.py ...                                          [ 26%]
+tests/test_llm_registry.py ....                                          [ 47%]
+tests/test_mcp_normalization.py .....                                    [ 73%]
+tests/test_prompt_building.py ..                                         [ 84%]
+tests/test_task_loading.py ...                                           [100%]
+
+============================== 19 passed in 0.61s ==============================
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Updating plan statuses**
+Plan update
+  ✓ Review existing MCP modules and task requirements; inspect current files for context.
+  ✓ Add failing tests for MCP normalization behavior per spec.
+  ✓ Implement MCP types and normalization helpers to satisfy tests; run pytest.
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Preparing final response with file line references**
+exec
+bash -lc 'nl -ba src/simple_rag_writer/mcp/normalization.py' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+     1	from __future__ import annotations
+     2	
+     3	from typing import Any, Dict, List, Optional
+     4	
+     5	from .types import NormalizedItem
+     6	
+     7	
+     8	def normalize_payload(
+     9	  payload: Any,
+    10	  item_type_hint: Optional[str] = None,
+    11	) -> List[NormalizedItem]:
+    12	  """Convert raw MCP payload into a list of NormalizedItem."""
+    13	  items: List[NormalizedItem] = []
+    14	
+    15	  if isinstance(payload, str):
+    16	    items.append(NormalizedItem(body=payload, type=item_type_hint))
+    17	  elif isinstance(payload, list):
+    18	    for idx, entry in enumerate(payload):
+    19	      if isinstance(entry, str):
+    20	        items.append(NormalizedItem(id=str(idx), body=entry, type=item_type_hint))
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Adding line numbers to tests file**
+exec
+bash -lc 'nl -ba tests/test_mcp_normalization.py' in /var/home/rick/Development/llm_writer succeeded in 38ms:
+     1	from __future__ import annotations
+     2	
+     3	from simple_rag_writer.mcp.normalization import normalize_payload
+     4	
+     5	
+     6	def test_string_payload_normalizes_to_single_item() -> None:
+     7	  result = normalize_payload("plain text blob", item_type_hint="note")
+     8	
+     9	  assert len(result) == 1
+    10	  item = result[0]
+    11	  assert item.type == "note"
+    12	  assert item.body == "plain text blob"
+    13	  assert item.metadata == {}
+    14	
+    15	
+    16	def test_list_of_strings_gets_index_ids() -> None:
+    17	  result = normalize_payload(["alpha", "beta"])
+    18	
+    19	  assert [item.id for item in result] == ["0", "1"]
+    20	  assert [item.body for item in result] == ["alpha", "beta"]
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Considering commit necessity**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+## main
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log.done
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log
+?? src/simple_rag_writer/__init__.py
+?? src/simple_rag_writer/__pycache__/
+?? src/simple_rag_writer/cli/
+?? src/simple_rag_writer/config/
+?? src/simple_rag_writer/llm/
+?? src/simple_rag_writer/logging/
+?? src/simple_rag_writer/mcp/
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Evaluating git workspace state**
+exec
+bash -lc 'git add src/simple_rag_writer/mcp/normalization.py tests/test_mcp_normalization.py' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Checking status**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+## main
+A  src/simple_rag_writer/mcp/normalization.py
+A  tests/test_mcp_normalization.py
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log.done
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log
+?? codex/LOGS/tasklog_03_implement_model_registry_and_litellm_integration_1763287725.log.done
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log
+?? codex/LOGS/tasklog_04_define_task_spec_and_loader_1763287876.log.done
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log
+?? codex/LOGS/tasklog_05_implement_prompt_builders_1763288031.log.done
+?? codex/LOGS/tasklog_06_implement_mcp_types_and_normalization_1763288389.log
+?? src/simple_rag_writer/__init__.py
+?? src/simple_rag_writer/__pycache__/
+?? src/simple_rag_writer/cli/
+?? src/simple_rag_writer/config/
+?? src/simple_rag_writer/llm/
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Committing new file addition**
+exec
+bash -lc 'git commit -m "feat: implement mcp normalization helpers"' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+[main d19e973] feat: implement mcp normalization helpers
+ 2 files changed, 112 insertions(+)
+ create mode 100644 src/simple_rag_writer/mcp/normalization.py
+ create mode 100644 tests/test_mcp_normalization.py
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+
+thinking
+**Summarizing commit and test details**
+
+I'll put together a clear final message that explains the MCP normalization helpers added in `src/simple_rag_writer/mcp/normalization.py` (lines 8-48), mentions the related tests in `tests/test_mcp_normalization.py` (lines 6-64), notes the tests were run with pytest, and references the commit message `feat: implement mcp normalization helpers`. I'll keep it concise with bullets covering the key files and changes to help the user quickly grasp what was done.
+codex
+- Added `normalize_payload()` handling for strings, lists, dict entries, and now stringifies all other collection members so mixed payloads don’t drop data while keeping unknown keys in metadata (`src/simple_rag_writer/mcp/normalization.py:8-48`).
+- Introduced targeted coverage ensuring strings, string lists, dict lists (including metadata preservation), mixed lists, and arbitrary payload objects normalize into `NormalizedItem` records (`tests/test_mcp_normalization.py:6-64`).
+- Commit: `feat: implement mcp normalization helpers`.
+
+Tests:
+- `pytest`
+file update:
+diff --git a/src/simple_rag_writer/mcp/normalization.py b/src/simple_rag_writer/mcp/normalization.py
+index ea03b45edea729d47d0643ddd15b9360d4b2042a..ff4f74436e1fc1c886c474734e3c37e1a02b6bd5
+--- a/src/simple_rag_writer/mcp/normalization.py
++++ b/src/simple_rag_writer/mcp/normalization.py
+@@ -34,6 +34,14 @@
+             },
+           )
+         )
++      else:
++        items.append(
++          NormalizedItem(
++            id=str(idx),
++            body=str(entry),
++            type=item_type_hint,
++          )
++        )
+   else:
+     items.append(NormalizedItem(body=str(payload), type=item_type_hint))
+ 
+diff --git a/tests/test_mcp_normalization.py b/tests/test_mcp_normalization.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebdcfacaf7a74c7e945b9529c54d04a7ad39b6ad
+--- /dev/null
++++ b/tests/test_mcp_normalization.py
+@@ -0,0 +1,64 @@
++from __future__ import annotations
++
++from simple_rag_writer.mcp.normalization import normalize_payload
++
++
++def test_string_payload_normalizes_to_single_item() -> None:
++  result = normalize_payload("plain text blob", item_type_hint="note")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.type == "note"
++  assert item.body == "plain text blob"
++  assert item.metadata == {}
++
++
++def test_list_of_strings_gets_index_ids() -> None:
++  result = normalize_payload(["alpha", "beta"])
++
++  assert [item.id for item in result] == ["0", "1"]
++  assert [item.body for item in result] == ["alpha", "beta"]
++
++
++def test_list_of_dicts_maps_known_fields_and_metadata() -> None:
++  payload = [
++    {
++      "id": "custom",
++      "type": "document",
++      "title": "Doc Title",
++      "snippet": "Short snippet",
++      "body": "Full body text",
++      "url": "https://example.test/doc",
++      "extra": 123,
++    }
++  ]
++
++  result = normalize_payload(payload, item_type_hint="fallback")
++
++  assert len(result) == 1
++  item = result[0]
++  assert item.id == "custom"
++  assert item.type == "document"
++  assert item.title == "Doc Title"
++  assert item.snippet == "Short snippet"
++  assert item.body == "Full body text"
++  assert item.url == "https://example.test/doc"
++  assert item.metadata == {"extra": 123}
++
++
++def test_list_entries_with_unknown_type_are_stringified() -> None:
++  result = normalize_payload(["alpha", 7])
++
++  assert len(result) == 2
++  assert result[0].body == "alpha"
++  assert result[1].body == "7"
++
++
++def test_unknown_payload_is_stringified() -> None:
++  class Dummy:
++    def __str__(self) -> str:  # pragma: no cover - trivial
++      return "Dummy payload"
++
++  [item] = normalize_payload(Dummy())
++  assert item.body == "Dummy payload"
++  assert item.metadata == {}
+
+tokens used
+65,054
+- Added `normalize_payload()` handling for strings, lists, dict entries, and now stringifies all other collection members so mixed payloads don’t drop data while keeping unknown keys in metadata (`src/simple_rag_writer/mcp/normalization.py:8-48`).
+- Introduced targeted coverage ensuring strings, string lists, dict lists (including metadata preservation), mixed lists, and arbitrary payload objects normalize into `NormalizedItem` records (`tests/test_mcp_normalization.py:6-64`).
+- Commit: `feat: implement mcp normalization helpers`.
+
+Tests:
+- `pytest`

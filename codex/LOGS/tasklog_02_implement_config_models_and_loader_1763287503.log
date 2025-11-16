@@ -1,0 +1,5355 @@
+OpenAI Codex v0.57.0 (research preview)
+--------
+workdir: /var/home/rick/Development/llm_writer
+model: gpt-5-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: auto
+session id: 019a8c20-1344-7eb0-a7aa-7d03cb5996b6
+--------
+user
+Implement the functionality described in codex/TASKS/02_implement_config_models_and_loader.yaml, then verify with any available tests.
+ERROR: MCP client for `vibe-check-mcp-server` timed out after 10 seconds. Add or adjust `startup_timeout_sec` in your config.toml:
+[mcp_servers.vibe-check-mcp-server]
+startup_timeout_sec = XX
+ERROR: MCP client for `exa` timed out after 10 seconds. Add or adjust `startup_timeout_sec` in your config.toml:
+[mcp_servers.exa]
+startup_timeout_sec = XX
+ERROR: MCP client for `context7-mcp` timed out after 10 seconds. Add or adjust `startup_timeout_sec` in your config.toml:
+[mcp_servers.context7-mcp]
+startup_timeout_sec = XX
+ERROR: MCP client for `mcp` timed out after 10 seconds. Add or adjust `startup_timeout_sec` in your config.toml:
+[mcp_servers.mcp]
+startup_timeout_sec = XX
+
+thinking
+**Listing files to start planning**
+exec
+bash -lc ls in /var/home/rick/Development/llm_writer succeeded in 39ms:
+AGENTS.md
+codex
+codex.toml
+pyproject.toml
+README.md
+requirements.txt
+src
+tests
+venv
+
+thinking
+**Reading tasks file**
+exec
+bash -lc "sed -n '1,200p' codex/TASKS/02_implement_config_models_and_loader.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+id: 02
+filename: 02_implement_config_models_and_loader.yaml
+title: Implement AppConfig models and YAML loader
+description: >
+  Finalize the configuration schema for providers, models, logging, and MCP
+  prompt policy using pydantic. Implement a robust YAML loader that returns
+  an AppConfig with a back-reference to the config path.
+
+dependencies:
+  - 01
+
+goals:
+  - AppConfig can represent:
+    - Providers (OpenAI, OpenRouter, Gemini, etc.).
+    - Named models with per-model params.
+    - Global model defaults.
+    - MCP prompt policy (raw_capped, summary).
+    - Planning logging configuration.
+  - load_config(Path) reads YAML, validates it, and attaches config_path.
+
+
+thinking
+**Planning test-driven development approach**
+Plan update
+  → Review existing config structure and understand requirements from task spec.
+  • Add/adjust tests in tests/test_config_loader.py to capture desired behavior and ensure they fail.
+  • Implement/modify config models and loader to satisfy tests, then rerun tests.
+
+thinking
+**Inspecting configuration files**
+exec
+bash -lc 'ls src/simple_rag_writer' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+cli
+config
+__init__.py
+llm
+logging
+mcp
+planning
+prompts
+__pycache__
+replay
+runner
+tasks
+
+thinking
+**Examining config folder**
+exec
+bash -lc 'ls src/simple_rag_writer/config' in /var/home/rick/Development/llm_writer succeeded in 43ms:
+__init__.py
+loader.py
+models.py
+__pycache__
+
+thinking
+**Inspecting models**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/config/models.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ProviderConfig(BaseModel):
+  type: str
+  api_key_env: Optional[str] = None
+  api_key: Optional[str] = None
+  base_url: Optional[str] = None
+  model_prefix: Optional[str] = None
+
+
+class ModelConfig(BaseModel):
+  id: str
+  provider: str
+  model_name: str
+
+thinking
+**Checking loader details**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/config/loader.py" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict
+
+import yaml
+
+from .models import AppConfig
+
+
+def load_config(path: Path) -> AppConfig:
+  with path.open("r", encoding="utf-8") as f:
+    raw: Dict[str, Any] = yaml.safe_load(f) or {}
+  cfg = AppConfig(**raw)
+  return cfg.with_path(path)
+
+thinking
+**Creating test file**
+exec
+bash -lc "sed -n '1,200p' tests/test_config_loader.py" in /var/home/rick/Development/llm_writer succeeded in 37ms:
+from pathlib import Path
+
+import pytest
+
+from simple_rag_writer.config.loader import load_config
+
+
+def test_load_config_round_trip(tmp_path: Path):
+  pytest.skip("Implement config loader test once schemas settle")
+
+  cfg_text = '''
+  default_model: "openai:gpt-4.1-mini"
+  providers:
+    openai:
+      type: "openai"
+      api_key_env: "OPENAI_API_KEY"
+  models:
+    - id: "openai:gpt-4.1-mini"
+      provider: "openai"
+      model_name: "gpt-4.1-mini"
+
+thinking
+**Planning implementation details and tests**
+exec
+bash -lc 'rg -n "AppConfig" -n src -n tests -n README.md' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+tests/test_llm_registry.py:3:from simple_rag_writer.config.models import AppConfig, ProviderConfig, ModelConfig
+tests/test_llm_registry.py:10:  cfg = AppConfig(
+src/simple_rag_writer/planning/repl.py:8:from simple_rag_writer.config.models import AppConfig
+src/simple_rag_writer/planning/repl.py:19:    config: AppConfig,
+src/simple_rag_writer/runner/run_tasks.py:9:from simple_rag_writer.config.models import AppConfig
+src/simple_rag_writer/runner/run_tasks.py:26:  config: AppConfig,
+src/simple_rag_writer/mcp/client.py:12:  - Start/stop MCP servers (from AppConfig.mcp_servers).
+src/simple_rag_writer/logging/planning_log.py:8:from simple_rag_writer.config.models import AppConfig
+src/simple_rag_writer/logging/planning_log.py:37:    cfg: AppConfig,
+src/simple_rag_writer/config/loader.py:8:from .models import AppConfig
+src/simple_rag_writer/config/loader.py:11:def load_config(path: Path) -> AppConfig:
+src/simple_rag_writer/config/loader.py:14:  cfg = AppConfig(**raw)
+src/simple_rag_writer/llm/registry.py:11:from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
+src/simple_rag_writer/llm/registry.py:16:  def __init__(self, config: AppConfig):
+src/simple_rag_writer/config/models.py:55:class AppConfig(BaseModel):
+src/simple_rag_writer/config/models.py:68:  def with_path(self, path: Path) -> "AppConfig":
+src/simple_rag_writer/llm/params.py:5:from simple_rag_writer.config.models import AppConfig, ModelConfig
+src/simple_rag_writer/llm/params.py:9:  app_config: AppConfig,
+src/simple_rag_writer/cli/replay.py:7:from simple_rag_writer.config.models import AppConfig
+src/simple_rag_writer/cli/replay.py:18:  config: AppConfig,
+
+thinking
+**Inspecting tests for config usage**
+exec
+bash -lc "sed -n '1,200p' tests/test_llm_registry.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+import pytest
+
+from simple_rag_writer.config.models import AppConfig, ProviderConfig, ModelConfig
+from simple_rag_writer.llm.registry import ModelRegistry
+
+
+def test_model_registry_sets_default_model():
+  pytest.skip("Needs litellm mocking before enabling")
+
+  cfg = AppConfig(
+    default_model="openai:gpt-4.1-mini",
+    providers={
+      "openai": ProviderConfig(type="openai", api_key_env="OPENAI_API_KEY"),
+    },
+    models=[
+      ModelConfig(
+        id="openai:gpt-4.1-mini",
+        provider="openai",
+        model_name="gpt-4.1-mini",
+      )
+
+thinking
+**Preparing to add tests and README example**
+exec
+bash -lc "sed -n '1,200p' README.md" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+# Simple Rag Writer
+
+Early scaffold for a slim writing assistant that:
+- Uses multiple LLM providers (OpenAI, OpenRouter, Gemini) via `litellm`.
+- Uses MCP servers as its only retrieval/knowledge layer.
+- Supports interactive planning (`srw -c config.yaml plan`).
+- Supports automated task execution from YAML (`srw -c config.yaml run tasks/*.yaml`).
+- Supports replaying planning prompts from logs (`srw -c config.yaml replay --log ... --turn ...`).
+
+This is an incomplete scaffold intended for test-driven development.
+Many components are stubs with TODOs.
+
+## Getting Started
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+srw --help
+srw -c config.yaml plan
+
+thinking
+**Reviewing configuration and model requirements**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/llm/params.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from simple_rag_writer.config.models import AppConfig, ModelConfig
+
+
+def merge_generation_params(
+  app_config: AppConfig,
+  model_config: ModelConfig,
+  task_params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+  params: Dict[str, Any] = {}
+  params.update(app_config.model_defaults or {})
+  params.update(model_config.params or {})
+  if task_params:
+    params.update(task_params)
+  return params
+
+thinking
+**Ensuring AppConfig enhancements**
+exec
+bash -lc 'cat pyproject.toml' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-rag-writer"
+version = "0.0.1"
+description = "Simplified rag_writer-style tool with MCP and multi-provider LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.0",
+  "PyYAML>=6.0",
+  "rich>=13.0",
+  "litellm>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+
+thinking
+**Assessing Pydantic v2 migration and validation**
+
+I'm reviewing how Pydantic v2's changes affect the config classes, especially around setting `config_path` dynamically and enforcing validation rules. I want to ensure loading configs properly handles missing files and that tests cover errors when required fields or providers are absent. Also considering whether to add stricter validations or enums for provider types and planning to update documentation with config examples.
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/logging/planning_log.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+from simple_rag_writer.config.models import AppConfig
+
+
+@dataclass
+class McpLogItem:
+  idx: int
+  server: str
+  tool: str
+  label: Optional[str]
+  normalized_id: Optional[str]
+  title: Optional[str]
+  type: Optional[str]
+  snippet: Optional[str]
+
+thinking
+**Planning config loading tests**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/config/__init__.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+
+
+thinking
+**Preparing tests for configuration schema**
+Plan update
+  ✓ Review existing config structure and understand requirements from task spec.
+  → Add/adjust tests in tests/test_config_loader.py to capture desired behavior and ensure they fail.
+  • Implement/modify config models and loader to satisfy tests, then rerun tests.
+
+thinking
+**Adding configuration loader tests**
+
+I’m preparing two main tests for the config loader: one to verify config loading and round-trip values (including nested fields like mcp_prompt_policy and logging), and another to check that missing required fields trigger validation errors. I'll modify the existing test file accordingly and use TDD by writing failing tests first.
+file update
+M /var/home/rick/Development/llm_writer/tests/test_config_loader.py
+@@ -1,4 +1,6 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+@@ -7,16 +9,45 @@
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+@@ -25,4 +56,31 @@
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+apply_patch(auto_approved=true) exited 0 in 5ms:
+Success. Updated the following files:
+M tests/test_config_loader.py
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+
+thinking
+**Analyzing test requirements and config schema**
+
+I'm reviewing whether current tests already pass despite new requirements, which challenges TDD principles since tests should initially fail before implementation. I'm checking if new features like `config_path` in `AppConfig` and provider details comply with the spec and whether additional validation or schema refinements are needed to enforce stricter config rules. This will help ensure the tests accurately reflect unfinished features and prompt necessary code updates.
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/llm/registry.py" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, List, Optional
+
+try:
+  import litellm
+except ImportError:  # pragma: no cover - only triggered when dependency missing
+  litellm = None
+
+from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
+from .params import merge_generation_params
+
+
+class ModelRegistry:
+  def __init__(self, config: AppConfig):
+    self._config = config
+    self._models: Dict[str, ModelConfig] = {m.id: m for m in config.models}
+    if config.default_model not in self._models:
+      raise ValueError(f"default_model {config.default_model} not found in models")
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+
+thinking
+**Checking configuration requirements**
+exec
+bash -lc 'rg -n "mcp_prompt_policy" -n' in /var/home/rick/Development/llm_writer succeeded in 42ms:
+tests/test_config_loader.py:35:    mcp_prompt_policy:
+tests/test_config_loader.py:64:  assert cfg.mcp_prompt_policy.default_mode == "summary"
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:335:I’m preparing two main tests for the config loader: one to verify config loading and round-trip values (including nested fields like mcp_prompt_policy and logging), and another to check that missing required fields trigger validation errors. I'll modify the existing test file accordingly and use TDD by writing failing tests first.
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:374:+    mcp_prompt_policy:
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:414:+  assert cfg.mcp_prompt_policy.default_mode == "summary"
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:482:+    mcp_prompt_policy:
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:523:+  assert cfg.mcp_prompt_policy.default_mode == "summary"
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:589:+    mcp_prompt_policy:
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:630:+  assert cfg.mcp_prompt_policy.default_mode == "summary"
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:723:+    mcp_prompt_policy:
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:764:+  assert cfg.mcp_prompt_policy.default_mode == "summary"
+codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log:792:bash -lc 'rg -n "mcp_prompt_policy" -n' in /var/home/rick/Development/llm_writer
+codex/LOGS/codex_run_2025-11-16_04-58-12.log:7:Tasks: 01_bootstrap_project_and_cli 02_implement_config_models_and_loader 03_implement_model_registry_and_litellm_integration 04_define_task_spec_and_loader 05_implement_prompt_builders 06_implement_mcp_types_and_normalization 07_implement_automated_task_runner 08_implement_planning_log_writer 09_implement_planning_repl 10_implement_replay_support 11_implement_mcp_prompt_policy_modes 12_add_textual_source_browser_stub
+codex/LOGS/codex_run_2025-11-16_04-50-49.log:7:Tasks: 01_bootstrap_project_and_cli 02_implement_config_models_and_loader 03_implement_model_registry_and_litellm_integration 04_define_task_spec_and_loader 05_implement_prompt_builders 06_implement_mcp_types_and_normalization 07_implement_automated_task_runner 08_implement_planning_log_writer 09_implement_planning_repl 10_implement_replay_support 11_implement_mcp_prompt_policy_modes 12_add_textual_source_browser_stub
+codex/TASKS/work_list:11:11_implement_mcp_prompt_policy_modes.yaml
+codex/TASKS/CODEX_TODO.md:15:- [ ] 11_implement_mcp_prompt_policy_modes.yaml
+codex/TASKS/11_implement_mcp_prompt_policy_modes.yaml:2:filename: 11_implement_mcp_prompt_policy_modes.yaml
+codex/TASKS/11_implement_mcp_prompt_policy_modes.yaml:14:  - AppConfig.mcp_prompt_policy.default_mode is honored.
+codex/TASKS/11_implement_mcp_prompt_policy_modes.yaml:22:  - tests/test_mcp_prompt_policy.py
+codex/TASKS/master_spec.yaml:250:    mcp_prompt_policy:
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+
+thinking
+**Inspecting master spec around config**
+exec
+bash -lc "sed -n '200,320p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 38ms:
+            required: false
+            description: "Optional prefix hint for model naming (primarily for Gemini)."
+    model_defaults:
+      type: map<string, any>
+      required: false
+      description: "Global default generation params for all models."
+      example:
+        temperature: 0.4
+        max_tokens: 2048
+        top_p: 1.0
+        presence_penalty: 0.0
+        frequency_penalty: 0.0
+    models:
+      type: list<ModelConfig>
+      required: true
+      description: "Concrete, user-friendly identifiers for available models."
+      ModelConfig:
+        fields:
+          id:
+            type: string
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+exec
+bash -lc "sed -n '320,420p' codex/TASKS/master_spec.yaml" in /var/home/rick/Development/llm_writer succeeded in 40ms:
+              fields:
+                enabled:
+                  type: bool
+                  default: true
+                  description: "If true, log planning sessions as Markdown."
+                dir:
+                  type: string
+                  default: "logs"
+                  description: "Directory to store planning logs."
+                include_mcp_events:
+                  type: bool
+                  default: true
+                  description: >
+                    If true, planning logs include MCP-related commands and
+                    the exact reference text that was injected into the model
+                    context.
+                mcp_inline:
+                  type: bool
+                  default: true
+                  description: >
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+
+thinking
+**Evaluating configuration model enhancements**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/mcp/client.py" in /var/home/rick/Development/llm_writer succeeded in 39ms:
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .types import McpToolResult
+
+
+class McpClient:
+  """
+  Placeholder for MCP client. Responsibilities:
+
+  - Start/stop MCP servers (from AppConfig.mcp_servers).
+  - Call tools on servers and return McpToolResult.
+  """
+
+  def __init__(self, config):
+    self._config = config
+    # TODO: process spawning / connection to MCP servers
+
+  def call_tool(self, server_id: str, tool_name: str, params: Dict[str, Any]) -> McpToolResult:
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..2c5ba8654494b713aea2f1e9a0eb3d7e4ae7a42b
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,86 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
+
+
+thinking
+**Finalizing Pydantic config models**
+
+I’m planning to convert existing dict-based configs like `McpServerConfig` into proper Pydantic data classes, ensuring fields like `default_mode` use `Literal` types with validators to enforce allowed values. I want to add test coverage that invalid values raise validation errors, so I’ll update and add tests for config loading and validation accordingly.
+file update
+M /var/home/rick/Development/llm_writer/tests/test_config_loader.py
+@@ -86 +86,25 @@
+   assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+apply_patch(auto_approved=true) exited 0 in 5ms:
+Success. Updated the following files:
+M tests/test_config_loader.py
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Preparing to run failing tests**
+exec
+bash -lc 'pytest tests/test_config_loader.py' in /var/home/rick/Development/llm_writer exited 1 in 1.29s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/test_config_loader.py ..F                                          [100%]
+
+=================================== FAILURES ===================================
+_____________ test_load_config_rejects_invalid_prompt_policy_mode ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-rick/pytest-2/test_load_config_rejects_inval0')
+
+    def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
+      cfg_text = dedent(
+        """
+        default_model: "openai:gpt-4.1-mini"
+        providers:
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Updating plan with test results**
+Plan update
+  ✓ Review existing config structure and understand requirements from task spec.
+  ✓ Add/adjust tests in tests/test_config_loader.py to capture desired behavior and ensure they fail.
+  → Implement/modify config models and loader to satisfy tests, then rerun tests.
+file update:
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Implementing config model enhancements**
+
+I'm adding a new `McpServerConfig` model with specified fields, updating `AppConfig` to include a list of these servers, and refining `McpPromptPolicy` to enforce allowed `default_mode` values via `Literal`. I’m also considering setting `model_config = ConfigDict(extra="forbid")` on config classes to prevent typos, and making sure `with_path` handles config paths correctly while preserving flexibility. Next, I’ll update `src/simple_rag_writer/config/models.py` accordingly and include relevant imports.
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/config/models.py
+@@ -43,2 +43,8 @@
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+@@ -59,3 +65,3 @@
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/config/models.py
+file update:
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..762bfddfa6444fdc89babefd907fc8160adf9db1
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -41,6 +41,12 @@
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+file update:
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..762bfddfa6444fdc89babefd907fc8160adf9db1
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -41,6 +41,12 @@
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Adding Literal import and updating typing imports**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/config/models.py
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/config/models.py
+file update:
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..762bfddfa6444fdc89babefd907fc8160adf9db1
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -41,6 +41,12 @@
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+file update:
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..762bfddfa6444fdc89babefd907fc8160adf9db1
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -41,6 +41,12 @@
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Updating imports to include Literal**
+file update
+M /var/home/rick/Development/llm_writer/src/simple_rag_writer/config/models.py
+@@ -3,3 +3,3 @@
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+@@ -38,3 +38,3 @@
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+apply_patch(auto_approved=true) exited 0 in 6ms:
+Success. Updated the following files:
+M src/simple_rag_writer/config/models.py
+file update:
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+file update:
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Updating README with example config**
+
+I'm preparing to add a new `## Example Config` section in the README to illustrate minimal config usage involving model settings and `mcp_prompt_policy`. I'll include a concise YAML snippet reflecting new features like `default_mode` and planning logging, aiming to clarify usage without overwhelming detail.
+file update
+M /var/home/rick/Development/llm_writer/README.md
+@@ -25 +25,22 @@
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+apply_patch(auto_approved=true) exited 0 in 8ms:
+Success. Updated the following files:
+M README.md
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Verifying YAML formatting and config handling**
+exec
+bash -lc "sed -n '1,200p' src/simple_rag_writer/config/models.py" in /var/home/rick/Development/llm_writer succeeded in 41ms:
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ProviderConfig(BaseModel):
+  type: str
+  api_key_env: Optional[str] = None
+  api_key: Optional[str] = None
+  base_url: Optional[str] = None
+  model_prefix: Optional[str] = None
+
+
+class ModelConfig(BaseModel):
+  id: str
+  provider: str
+  model_name: str
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Running tests to verify changes**
+exec
+bash -lc 'pytest tests/test_config_loader.py' in /var/home/rick/Development/llm_writer succeeded in 1.28s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/test_config_loader.py ...                                          [100%]
+
+============================== 3 passed in 0.46s ===============================
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Running full test suite**
+exec
+bash -lc pytest in /var/home/rick/Development/llm_writer succeeded in 1.41s:
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
+rootdir: /var/home/rick/Development/llm_writer
+configfile: pyproject.toml
+testpaths: tests
+plugins: Faker-37.8.0, xdist-3.8.0, mock-3.15.1, metadata-3.1.1, cov-7.0.0, asyncio-1.2.0, html-4.1.1, hypothesis-6.141.1, anyio-4.8.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 6 items
+
+tests/test_cli_parser.py ..                                              [ 33%]
+tests/test_config_loader.py ...                                          [ 83%]
+tests/test_llm_registry.py s                                             [100%]
+
+========================= 5 passed, 1 skipped in 0.60s =========================
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Updating plan progress**
+Plan update
+Tests were written first to cover round-trip loading and prompt policy validation, then the config models/loader were updated to satisfy them. All project tests now pass.
+  ✓ Review existing config structure and understand requirements from task spec.
+  ✓ Add/adjust tests in tests/test_config_loader.py to capture desired behavior and ensure they fail.
+  ✓ Implement/modify config models and loader to satisfy tests, then rerun tests.
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Preparing detailed final response**
+exec
+bash -lc 'nl -ba tests/test_config_loader.py' in /var/home/rick/Development/llm_writer succeeded in 39ms:
+     1	from pathlib import Path
+     2	from textwrap import dedent
+     3	
+     4	import pytest
+     5	from pydantic import ValidationError
+     6	
+     7	from simple_rag_writer.config.loader import load_config
+     8	
+     9	
+    10	def test_load_config_round_trip(tmp_path: Path) -> None:
+    11	  cfg_text = dedent(
+    12	    """
+    13	    default_model: "openai:gpt-4.1-mini"
+    14	    providers:
+    15	      openai:
+    16	        type: "openai"
+    17	        api_key_env: "OPENAI_API_KEY"
+    18	      openrouter:
+    19	        type: "openrouter"
+    20	        api_key_env: "OPENROUTER_API_KEY"
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Adding line numbers to config models file**
+exec
+bash -lc 'nl -ba src/simple_rag_writer/config/models.py' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+     1	from __future__ import annotations
+     2	
+     3	from pathlib import Path
+     4	from typing import Any, Dict, List, Literal, Optional
+     5	
+     6	from pydantic import BaseModel, Field
+     7	
+     8	
+     9	class ProviderConfig(BaseModel):
+    10	  type: str
+    11	  api_key_env: Optional[str] = None
+    12	  api_key: Optional[str] = None
+    13	  base_url: Optional[str] = None
+    14	  model_prefix: Optional[str] = None
+    15	
+    16	
+    17	class ModelConfig(BaseModel):
+    18	  id: str
+    19	  provider: str
+    20	  model_name: str
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Adding README lines**
+exec
+bash -lc 'nl -ba README.md' in /var/home/rick/Development/llm_writer succeeded in 40ms:
+     1	# Simple Rag Writer
+     2	
+     3	Early scaffold for a slim writing assistant that:
+     4	- Uses multiple LLM providers (OpenAI, OpenRouter, Gemini) via `litellm`.
+     5	- Uses MCP servers as its only retrieval/knowledge layer.
+     6	- Supports interactive planning (`srw -c config.yaml plan`).
+     7	- Supports automated task execution from YAML (`srw -c config.yaml run tasks/*.yaml`).
+     8	- Supports replaying planning prompts from logs (`srw -c config.yaml replay --log ... --turn ...`).
+     9	
+    10	This is an incomplete scaffold intended for test-driven development.
+    11	Many components are stubs with TODOs.
+    12	
+    13	## Getting Started
+    14	
+    15	```bash
+    16	python -m venv .venv
+    17	source .venv/bin/activate
+    18	pip install -e .
+    19	srw --help
+    20	srw -c config.yaml plan
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Verifying git status before summary**
+exec
+bash -lc 'git status -sb' in /var/home/rick/Development/llm_writer succeeded in 41ms:
+## main
+ M README.md
+ M tests/test_config_loader.py
+?? codex/LOGS/codex_run_2025-11-16_04-58-12.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log
+?? codex/LOGS/tasklog_01_bootstrap_project_and_cli_1763287092.log.done
+?? codex/LOGS/tasklog_02_implement_config_models_and_loader_1763287503.log
+?? src/
+?? tests/__pycache__/
+?? tests/conftest.py
+?? tests/test_cli_parser.py
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+
+thinking
+**Preparing detailed change summary**
+codex
+**Changes**
+- Expanded the config loader tests to cover a full YAML round-trip (including logging and MCP policy fields), missing required keys, and invalid prompt-policy modes so the loader’s expected behavior is codified (tests/test_config_loader.py:10).
+- Tightened the config schema by introducing `McpServerConfig`, constraining `mcp_prompt_policy.default_mode` to the supported literals, and keeping `mcp_servers` strongly typed while preserving the config-path back-reference (src/simple_rag_writer/config/models.py:9).
+- Added a minimal YAML example to the README so users have a reference layout for providers, models, logging, and prompt policy settings (README.md:27).
+
+**Tests**
+- `pytest`
+
+**Next Steps**
+- 1. Use the sample config as a base to create your real `config.yaml`, then run `srw` with it to exercise the loader end-to-end.
+file update:
+diff --git a/README.md b/README.md
+index 92636ce1cdc0753420ab0ec594afa4465c24d0ee..83cf1a832113a44f0cafa4b8061f60ea7f25171f
+--- a/README.md
++++ b/README.md
+@@ -23,3 +23,24 @@
+ The CLI requires a configuration YAML file that declares providers, models,
+ and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+ tasks once a config is available, or `srw replay` to inspect planning logs.
++
++## Example Config
++
++```yaml
++default_model: "openai:gpt-4.1-mini"
++providers:
++  openai:
++    type: "openai"
++    api_key_env: "OPENAI_API_KEY"
++model_defaults:
++  temperature: 0.3
++models:
++  - id: "openai:gpt-4.1-mini"
++    provider: "openai"
++    model_name: "gpt-4.1-mini"
++mcp_prompt_policy:
++  default_mode: "raw_capped"
++logging:
++  planning:
++    enabled: true
++```
+diff --git a/src/simple_rag_writer/config/models.py b/src/simple_rag_writer/config/models.py
+index 23335d46a67d9e1c9b7e85f7e2c45edc5e8d7799..55d844bb4cf9bf53a94a6affdccf60862b5afa0d
+--- a/src/simple_rag_writer/config/models.py
++++ b/src/simple_rag_writer/config/models.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ from pathlib import Path
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Literal, Optional
+ 
+ from pydantic import BaseModel, Field
+ 
+@@ -36,11 +36,17 @@
+ 
+ 
+ class McpPromptPolicy(BaseModel):
+-  default_mode: str = "raw_capped"
++  default_mode: Literal["raw_capped", "summary"] = "raw_capped"
+   raw_capped: RawCappedPolicy = Field(default_factory=RawCappedPolicy)
+   summary: SummaryPolicy = Field(default_factory=SummaryPolicy)
+ 
+ 
++class McpServerConfig(BaseModel):
++  id: str
++  command: List[str]
++  auto_start: bool = True
++
++
+ class PlanningLoggingConfig(BaseModel):
+   enabled: bool = True
+   dir: str = "logs"
+@@ -57,7 +63,7 @@
+   providers: Dict[str, ProviderConfig]
+   model_defaults: Dict[str, Any] = Field(default_factory=dict)
+   models: List[ModelConfig]
+-  mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
++  mcp_servers: List[McpServerConfig] = Field(default_factory=list)
+   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+ 
+diff --git a/tests/test_config_loader.py b/tests/test_config_loader.py
+index 78a08225c2d457fb461e1b308d9793ce6617b9ff..4066fafc0798b1a1d5af1f5240da2ff729107a19
+--- a/tests/test_config_loader.py
++++ b/tests/test_config_loader.py
+@@ -1,28 +1,110 @@
+ from pathlib import Path
++from textwrap import dedent
+ 
+ import pytest
++from pydantic import ValidationError
+ 
+ from simple_rag_writer.config.loader import load_config
+ 
+ 
+-def test_load_config_round_trip(tmp_path: Path):
+-  pytest.skip("Implement config loader test once schemas settle")
++def test_load_config_round_trip(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++        api_key_env: "OPENAI_API_KEY"
++      openrouter:
++        type: "openrouter"
++        api_key_env: "OPENROUTER_API_KEY"
++        base_url: "https://openrouter.ai/api/v1"
++    model_defaults:
++      temperature: 0.3
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++        params:
++          response_format: {type: "text"}
++      - id: "openrouter:meta-llama/3.1"
++        provider: "openrouter"
++        model_name: "meta-llama/Meta-Llama-3.1-8B-Instruct"
++        params:
++          temperature: 0.2
++    mcp_prompt_policy:
++      default_mode: "summary"
++      raw_capped:
++        max_items_per_reference: 2
++      summary:
++        summarizer_model: "openai:gpt-4.1-mini"
++        summary_max_tokens: 256
++        per_type_prompts:
++          file: "Summarize file content"
++    logging:
++      planning:
++        enabled: true
++        dir: "plan-logs"
++        include_mcp_events: false
++        mcp_inline: false
++    """
++  )
+ 
+-  cfg_text = '''
+-  default_model: "openai:gpt-4.1-mini"
+-  providers:
+-    openai:
+-      type: "openai"
+-      api_key_env: "OPENAI_API_KEY"
+-  models:
+-    - id: "openai:gpt-4.1-mini"
+-      provider: "openai"
+-      model_name: "gpt-4.1-mini"
+-  '''
+   path = tmp_path / "config.yaml"
+   path.write_text(cfg_text, encoding="utf-8")
+ 
+   cfg = load_config(path)
++  assert cfg.config_path == path
+   assert cfg.default_model == "openai:gpt-4.1-mini"
+-  assert "openai" in cfg.providers
++  assert "openai" in cfg.providers and cfg.providers["openai"].type == "openai"
++  assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
++  assert cfg.model_defaults == {"temperature": 0.3}
+   assert cfg.models[0].id == "openai:gpt-4.1-mini"
++  assert cfg.models[1].params["temperature"] == 0.2
++  assert cfg.mcp_prompt_policy.default_mode == "summary"
++  assert cfg.logging.planning.dir == "plan-logs"
++
++
++def test_load_config_missing_required_field(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "missing-default"
++        provider: "openai"
++        model_name: "gpt-4o-mini"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_model" in str(excinfo.value)
++
++
++def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
++  cfg_text = dedent(
++    """
++    default_model: "openai:gpt-4.1-mini"
++    providers:
++      openai:
++        type: "openai"
++    models:
++      - id: "openai:gpt-4.1-mini"
++        provider: "openai"
++        model_name: "gpt-4.1-mini"
++    mcp_prompt_policy:
++      default_mode: "invalid-mode"
++    """
++  )
++  path = tmp_path / "config.yaml"
++  path.write_text(cfg_text, encoding="utf-8")
++
++  with pytest.raises(ValidationError) as excinfo:
++    load_config(path)
++
++  assert "default_mode" in str(excinfo.value)
+
+tokens used
+91,087
+**Changes**
+- Expanded the config loader tests to cover a full YAML round-trip (including logging and MCP policy fields), missing required keys, and invalid prompt-policy modes so the loader’s expected behavior is codified (tests/test_config_loader.py:10).
+- Tightened the config schema by introducing `McpServerConfig`, constraining `mcp_prompt_policy.default_mode` to the supported literals, and keeping `mcp_servers` strongly typed while preserving the config-path back-reference (src/simple_rag_writer/config/models.py:9).
+- Added a minimal YAML example to the README so users have a reference layout for providers, models, logging, and prompt policy settings (README.md:27).
+
+**Tests**
+- `pytest`
+
+**Next Steps**
+- 1. Use the sample config as a base to create your real `config.yaml`, then run `srw` with it to exercise the loader end-to-end.
