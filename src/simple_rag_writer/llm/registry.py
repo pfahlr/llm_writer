@@ -200,39 +200,47 @@ class ModelRegistry:
     tool_names = self._build_tool_name_list(tool_metadata)
     inventory_description = self._render_tool_inventory(tool_metadata)
     params_guidance = self._render_params_guidance(tool_metadata)
+    tool_parameters = {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string",
+          "description": (
+            "MCP server id to contact."
+            f" Available servers: {', '.join(server_ids)}."
+          ),
+          "enum": server_ids,
+        },
+        "tool": {
+          "type": "string",
+          "enum": tool_names,
+          "description": (
+            "Name of the tool exposed by the MCP server."
+            f" Tool metadata:\n{inventory_description}"
+          ),
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": True,
+          "description": (
+            "Tool-specific parameters (query, limit, etc.)."
+            f" {params_guidance}"
+          ),
+        },
+      },
+      "required": ["server", "tool"],
+      "additionalProperties": True,
+    }
+
+    description = "Use a configured MCP server to fetch structured references."
     return {
       "name": "call_mcp_tool",
-      "description": "Use a configured MCP server to fetch structured references.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "server": {
-            "type": "string",
-            "description": (
-              "MCP server id to contact."
-              f" Available servers: {', '.join(server_ids)}."
-            ),
-            "enum": server_ids,
-          },
-          "tool": {
-            "type": "string",
-            "enum": tool_names,
-            "description": (
-              "Name of the tool exposed by the MCP server."
-              f" Tool metadata:\n{inventory_description}"
-            ),
-          },
-          "params": {
-            "type": "object",
-            "additionalProperties": True,
-            "description": (
-              "Tool-specific parameters (query, limit, etc.)."
-              f" {params_guidance}"
-            ),
-          },
-        },
-        "required": ["server", "tool"],
-        "additionalProperties": True,
+      "description": description,
+      "parameters": tool_parameters,
+      "function": {
+        "name": "call_mcp_tool",
+        "description": description,
+        "parameters": tool_parameters,
       },
     }
 
