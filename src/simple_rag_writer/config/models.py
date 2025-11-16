@@ -65,6 +65,16 @@ class McpServerConfig(BaseModel):
   auto_start: bool = True
 
 
+class LlmToolConfig(BaseModel):
+  id: str = "llm"
+  tool_name: str = "llm"
+  title: Optional[str] = None
+  description: Optional[str] = None
+  default_skill: Optional[str] = None
+  skills: Dict[str, str]
+  max_tokens_limit: Optional[int] = None
+
+
 class PlanningLoggingConfig(BaseModel):
   enabled: bool = True
   dir: str = "logs"
@@ -83,6 +93,7 @@ class AppConfig(BaseModel):
   models: List[ModelConfig]
   mcp_servers: List[McpServerConfig] = Field(default_factory=list)
   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
+  llm_tool: Optional[LlmToolConfig] = None
   logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
   @property

@@ -193,6 +193,37 @@ and the `/use` command automatically injects the fetched items for later use.
 MCP errors are surfaced to the REPL and respect `mcp_error_mode` during automated
 runs.
 
+You can also expose the local LLM as an MCP tool by describing it via
+`llm_tool` and wiring that entry to a process that runs
+`python -m simple_rag_writer.mcp.llm_tool --config config.yaml`. The `llm_tool`
+section maps skill keywords to a single configured model (`skills: {reason:
+or-qwen3-235b-a22b}`) and limits the models the tool may call. A matching MCP
+server entry can be as simple as:
+
+```yaml
+llm_tool:
+  id: "llm"
+  tool_name: "llm-complete"
+  title: "LLM skill completions"
+  skills:
+    reason: "or-qwen3-235b-a22b"
+    summarize: "or-kimi-k2"
+  default_skill: "reason"
+  max_tokens_limit: 2048
+
+mcp_servers:
+  - id: "llm"
+    command:
+      - "python"
+      - "srw_llm_tool.py"
+      - "--config"
+      - "config.yaml"
+```
+
+The server will advertise `skill` as an enum in `tools/list`, and calls to
+`tool` in the MCP protocol may request `skill: "summarize"` to ensure only the
+allowed model receives that prompt.
+
 ## Development & Testing
 
 This repo follows strict TDD. For every change:

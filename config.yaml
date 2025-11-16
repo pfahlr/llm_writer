@@ -226,6 +226,17 @@ models:
       max_tokens: 4096
     tags: ["venice", "uncensored", "creative"]
 
+llm_tool:
+  id: "llm"
+  tool_name: "llm-complete"
+  title: "LLM skill completions"
+  description: "Expose a curated skill set as an MCP tool."
+  skills:
+    reason: "or-qwen3-235b-a22b"
+    summarize: "or-kimi-k2"
+  default_skill: "reason"
+  max_tokens_limit: 2048
+
 mcp_servers:
   - id: arxiv
     command:
@@ -236,3 +247,9 @@ mcp_servers:
       - "--storage-path"
       - "/home/rick/.cache/arxiv-papers"
     auto_start: true
+  - id: "llm"
+    command:
+      - "python"
+      - "srw_llm_tool.py"
+      - "--config"
+      - "config.yaml"
