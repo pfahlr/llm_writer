@@ -100,7 +100,7 @@ class ModelRegistry:
     attempt = 0
     max_tool_iterations = 3
     while True:
-    call_kwargs = dict(completion_kwargs)
+      call_kwargs = dict(completion_kwargs)
       call_kwargs["messages"] = [dict(msg) for msg in messages]
       if tools_payload is not None:
         call_kwargs["tools"] = tools_payload

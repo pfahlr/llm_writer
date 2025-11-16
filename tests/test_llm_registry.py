@@ -88,7 +88,7 @@ def test_complete_merges_params_and_returns_response(monkeypatch):
   assert result == "done"
   assert len(called["messages"]) == 2
   assert called["messages"][1] == {"role": "user", "content": "Hello"}
-  assert called["kwargs"] == {
+  expected_kwargs = {
     "model": "gpt-4.1-mini",
     "api_key": "env-key",
     "api_base": "https://api.example.com/v1",
@@ -96,8 +96,8 @@ def test_complete_merges_params_and_returns_response(monkeypatch):
     "temperature": 0.1,
     "top_p": 0.5,
     "presence_penalty": 0.6,
-    "tools": None,
   }
+  assert called["kwargs"] == expected_kwargs
 
 
 def test_complete_missing_provider_raises(monkeypatch):
