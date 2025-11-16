@@ -25,6 +25,7 @@ class ModelRegistry:
       raise ValueError(f"default_model {config.default_model} not found in models")
     self._current_id = config.default_model
     self._provider_supports_functions: Dict[str, bool] = {}
+    self._tool_events: List[str] = []
 
   @property
   def current_id(self) -> str:
@@ -128,6 +129,7 @@ class ModelRegistry:
         result = mcp_client.call_tool(server_id, tool_name, params)
         messages.append(self._build_assistant_tool_message(message))
         messages.append(self._render_mcp_tool_result(result, tool_call))
+        self._log_tool_event(server_id, tool_name, params, result)
         attempt += 1
         continue
       if not supports_functions and has_mcp_tools:
@@ -139,6 +141,7 @@ class ModelRegistry:
           result = mcp_client.call_tool(server_id, tool_name, params)
           messages.append({"role": "assistant", "content": text_output})
           messages.append(self._render_textual_tool_message(result, server_id, tool_name, params))
+          self._log_tool_event(server_id, tool_name, params, result)
           attempt += 1
           if attempt >= max_tool_iterations:
             raise RuntimeError("LLM requested too many MCP tool calls.")
@@ -174,6 +177,30 @@ class ModelRegistry:
         )
       metadata[server.id] = entries
     return metadata
+
+  def _log_tool_event(
+    self,
+    server_id: str,
+    tool_name: str,
+    params: Dict[str, Any],
+    result: McpToolResult,
+  ) -> None:
+    snippet = self._summarize_tool_result(result)
+    description = f"Tool {server_id}:{tool_name} params={params} → {snippet}"
+    self._tool_events.append(description)
+
+  def _summarize_tool_result(self, result: McpToolResult) -> str:
+    items = normalize_payload(result.payload)
+    if not items:
+      return "no items"
+    first = items[0]
+    body = (first.body or first.snippet or "").strip()
+    return body[:80] + ("…" if len(body or "") > 80 else "")
+
+  def pop_tool_events(self) -> List[str]:
+    events = list(self._tool_events)
+    self._tool_events.clear()
+    return events
 
   def _build_tool_name_list(self, tool_metadata: Dict[str, List[Dict[str, Any]]]) -> List[str]:
     names = sorted(

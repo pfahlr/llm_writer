@@ -64,6 +64,8 @@ class _FakeModelRegistry:
   ) -> str:  # pragma: no cover - exercised via tests
     self.completions.append(prompt)
     return f"assistant-{len(self.completions)}"
+  def pop_tool_events(self) -> List[str]:
+    return []
 
 
 class _FakeMcpClient:

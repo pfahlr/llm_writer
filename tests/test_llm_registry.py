@@ -349,3 +349,6 @@ def test_complete_handles_textual_tool_calls(monkeypatch):
 
   assert fake_client.calls == [("notes", "search", {"query": "topic"})]
   assert result == "final response"
+  events = registry.pop_tool_events()
+  assert events
+  assert "notes:search" in events[0]
