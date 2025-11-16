@@ -16,6 +16,7 @@ from simple_rag_writer.mcp.types import McpToolResult
 from .params import merge_generation_params
 
 
+# pylint: disable=too-many-instance-attributes
 class ModelRegistry:
   def __init__(self, config: AppConfig):
     self._config = config
@@ -23,6 +24,7 @@ class ModelRegistry:
     if config.default_model not in self._models:
       raise ValueError(f"default_model {config.default_model} not found in models")
     self._current_id = config.default_model
+    self._provider_supports_functions: Dict[str, bool] = {}
 
   @property
   def current_id(self) -> str:
@@ -80,44 +82,68 @@ class ModelRegistry:
 
     kwargs.update(gen_params)
 
-    tools_metadata: dict[str, List[Dict[str, Any]]] = {}
-    tools: Optional[List[Dict[str, Any]]] = None
     system_message: Optional[Dict[str, str]] = None
-    if self._should_enable_mcp_tools(mcp_client):
-      tools_metadata = self._collect_mcp_tool_metadata(mcp_client)
-      tools = [self._build_mcp_tool_definition(tools_metadata)]
-      system_message = {
-        "role": "system",
-        "content": self._build_mcp_tool_instruction(tools_metadata),
-      }
+    tool_metadata: Dict[str, List[Dict[str, Any]]] = {}
+    has_mcp_tools = self._should_enable_mcp_tools(mcp_client)
+    if has_mcp_tools and mcp_client is not None:
+      tool_metadata = self._collect_mcp_tool_metadata(mcp_client)
+    system_message = {
+      "role": "system",
+      "content": self._build_mcp_tool_instruction(tool_metadata),
+    }
 
-    messages: List[Dict[str, object]] = []
-    if system_message:
-      messages.append(system_message)
-    messages.append({"role": "user", "content": prompt})
+    messages: List[Dict[str, object]] = [system_message, {"role": "user", "content": prompt}]
 
-    completion_kwargs: Dict[str, Any] = dict(kwargs)
+    supports_functions = self._provider_supports_function_calls(provider)
+    tools_payload = [self._build_mcp_tool_definition(tool_metadata)] if supports_functions and has_mcp_tools else None
+    completion_kwargs = dict(kwargs)
     attempt = 0
     max_tool_iterations = 3
     while True:
-      call_kwargs = dict(completion_kwargs)
+    call_kwargs = dict(completion_kwargs)
       call_kwargs["messages"] = [dict(msg) for msg in messages]
-      call_kwargs["tools"] = tools
-      response = litellm.completion(**call_kwargs)
+      if tools_payload is not None:
+        call_kwargs["tools"] = tools_payload
+      try:
+        response = litellm.completion(**call_kwargs)
+      except AttributeError as exc:
+        raise RuntimeError("litellm BadRequest: " + str(exc)) from exc
+      except Exception as exc:  # noqa: BLE001
+        if supports_functions and isinstance(exc, getattr(litellm, "BadRequestError", Exception)):
+          self._provider_supports_functions[provider.type] = False
+          supports_functions = False
+          tools_payload = None
+          continue
+        raise
       message = response.choices[0].message
       tool_calls = getattr(message, "tool_calls", None)
-      if not tool_calls:
-        return getattr(message, "content", "") or ""
-      if mcp_client is None:
-        raise RuntimeError("Model tried to invoke MCP tools but no client is configured.")
-      if attempt >= max_tool_iterations:
-        raise RuntimeError("LLM requested too many MCP tool calls.")
-      tool_call = tool_calls[0]
-      server_id, tool_name, params = self._parse_mcp_tool_call(tool_call)
-      result = mcp_client.call_tool(server_id, tool_name, params)
-      messages.append(self._build_assistant_tool_message(message))
-      messages.append(self._render_mcp_tool_result(result, tool_call))
-      attempt += 1
+      text_output = getattr(message, "content", "") or ""
+      if tool_calls:
+        if mcp_client is None:
+          raise RuntimeError("Model tried to invoke MCP tools but no client is configured.")
+        if attempt >= max_tool_iterations:
+          raise RuntimeError("LLM requested too many MCP tool calls.")
+        tool_call = tool_calls[0]
+        server_id, tool_name, params = self._parse_mcp_tool_call(tool_call)
+        result = mcp_client.call_tool(server_id, tool_name, params)
+        messages.append(self._build_assistant_tool_message(message))
+        messages.append(self._render_mcp_tool_result(result, tool_call))
+        attempt += 1
+        continue
+      if not supports_functions and has_mcp_tools:
+        parsed = self._extract_tool_command_from_text(text_output)
+        if parsed:
+          if mcp_client is None:
+            raise RuntimeError("Model requested MCP tool via text but no client is configured.")
+          server_id, tool_name, params = parsed
+          result = mcp_client.call_tool(server_id, tool_name, params)
+          messages.append({"role": "assistant", "content": text_output})
+          messages.append(self._render_textual_tool_message(result, server_id, tool_name, params))
+          attempt += 1
+          if attempt >= max_tool_iterations:
+            raise RuntimeError("LLM requested too many MCP tool calls.")
+          continue
+      return text_output
 
   def _should_enable_mcp_tools(self, mcp_client: Optional[McpClient]) -> bool:
     return bool(self._config.mcp_servers) and mcp_client is not None
@@ -170,9 +196,9 @@ class ModelRegistry:
         desc = tool.get("description") or "No description provided."
         fields = self._format_schema_fields(tool.get("inputSchema"))
         lines.append(f"  - {tool['name']}: {desc} (params: {fields})")
-    if not lines:
-      return "No detailed tool metadata is available."
-    return "\n".join(lines)
+      if not lines:
+        return "No detailed tool metadata is available."
+      return "\n".join(lines)
 
   def _render_params_guidance(self, tool_metadata: Dict[str, List[Dict[str, Any]]]) -> str:
     snippets: List[str] = []
@@ -237,11 +263,71 @@ class ModelRegistry:
       "name": "call_mcp_tool",
       "description": description,
       "parameters": tool_parameters,
-      "function": {
-        "name": "call_mcp_tool",
-        "description": description,
-        "parameters": tool_parameters,
-      },
+    }
+
+  def _provider_supports_function_calls(self, provider: ProviderConfig) -> bool:
+    key = provider.type
+    cached = self._provider_supports_functions.get(key)
+    if cached is not None:
+      return cached
+    supports = key != "openrouter"
+    self._provider_supports_functions[key] = supports
+    return supports
+
+  def _extract_tool_command_from_text(self, text: str) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    marker = "CALL_MCP_TOOL"
+    idx = text.find(marker)
+    if idx == -1:
+      return None
+    start = text.find("{", idx)
+    if start == -1:
+      return None
+    depth = 0
+    end = start
+    for pos in range(start, len(text)):
+      char = text[pos]
+      if char == "{":
+        depth += 1
+      elif char == "}":
+        depth -= 1
+        if depth == 0:
+          end = pos + 1
+          break
+    if depth != 0:
+      return None
+    try:
+      payload = json.loads(text[start:end])
+    except json.JSONDecodeError:
+      return None
+    server_id = payload.get("server")
+    tool_name = payload.get("tool")
+    params = payload.get("params") or {}
+    if not isinstance(params, dict):
+      return None
+    if not server_id or not tool_name:
+      return None
+    return server_id, tool_name, params
+
+  def _render_textual_tool_message(
+    self,
+    result: McpToolResult,
+    server_id: str,
+    tool_name: str,
+    params: Dict[str, Any],
+  ) -> Dict[str, Any]:
+    header = f"Result from {server_id}:{tool_name}"
+    items = normalize_payload(result.payload)
+    lines: List[str] = [header]
+    for item in items:
+      lines.append(item.title or "Item")
+      body_text = (item.body or item.snippet or "").strip()
+      if body_text:
+        lines.append(body_text)
+    return {
+      "role": "tool",
+      "name": "call_mcp_tool",
+      "tool_call_id": f"{server_id}:{tool_name}",
+      "content": "\n".join(lines).strip(),
     }
 
   def _build_mcp_tool_instruction(self, tool_metadata: Dict[str, List[Dict[str, Any]]]) -> str:
@@ -250,7 +336,9 @@ class ModelRegistry:
     return (
       "If you need additional context, call `call_mcp_tool` with JSON arguments "
       "containing `server` and `tool`, plus an optional `params` object for tool-specific options. "
-      f"Known servers: {servers}.\nAvailable tools:\n{inventory}"
+      f"Known servers: {servers}.\nAvailable tools:\n{inventory}\n"
+      "When function calling is unavailable, respond with `CALL_MCP_TOOL {\"server\":...,\"tool\":...,\"params\":{...}}` "
+      "so the client can execute the request."
     )
 
   def _parse_mcp_tool_call(self, tool_call: Any) -> Tuple[str, str, Dict[str, Any]]:

@@ -86,7 +86,8 @@ def test_complete_merges_params_and_returns_response(monkeypatch):
   )
 
   assert result == "done"
-  assert called["messages"] == [{"role": "user", "content": "Hello"}]
+  assert len(called["messages"]) == 2
+  assert called["messages"][1] == {"role": "user", "content": "Hello"}
   assert called["kwargs"] == {
     "model": "gpt-4.1-mini",
     "api_key": "env-key",
@@ -281,3 +282,70 @@ def test_complete_handles_mcp_tool_calls(monkeypatch):
   last_message = calls[1]["messages"][-1]
   assert last_message["role"] == "tool"
   assert "Result from notes:search" in last_message["content"]
+
+
+def test_complete_handles_textual_tool_calls(monkeypatch):
+  responses: list[str] = []
+
+  def fake_completion(*, messages, **kwargs):
+    responses.append(messages[-1]["content"])
+    if len(responses) == 1:
+      return SimpleNamespace(
+        choices=[
+          SimpleNamespace(
+            message=SimpleNamespace(
+              content='CALL_MCP_TOOL {"server":"notes","tool":"search","params":{"query":"topic"}}',
+              tool_calls=[],
+            )
+          )
+        ]
+      )
+    return SimpleNamespace(
+      choices=[
+        SimpleNamespace(message=SimpleNamespace(content="final response", tool_calls=[]))
+      ]
+    )
+
+  monkeypatch.setattr(
+    "simple_rag_writer.llm.registry.litellm",
+    SimpleNamespace(completion=fake_completion, BadRequestError=Exception),
+  )
+
+  cfg = AppConfig(
+    default_model="openrouter:default",
+    providers={
+      "openrouter": ProviderConfig(
+        type="openrouter",
+        api_key="dummy",
+        base_url="https://openrouter.ai/api/v1",
+      ),
+    },
+    models=[
+      ModelConfig(id="openrouter:default", provider="openrouter", model_name="router"),
+    ],
+    mcp_servers=[
+      McpServerConfig(id="notes", command=["notes-cmd"]),
+    ],
+  )
+  registry = ModelRegistry(cfg)
+
+  class FakeMcpClient:
+    def __init__(self) -> None:
+      self.calls: list[tuple[str, str, Dict[str, Any]]] = []
+
+    def list_tools(self, server: str):
+      return []
+
+    def call_tool(self, server: str, tool: str, params: Dict[str, Any]) -> McpToolResult:
+      self.calls.append((server, tool, params))
+      return McpToolResult(
+        server_id=server,
+        tool_name=tool,
+        payload=[{"title": "Doc", "body": "Body"}],
+      )
+
+  fake_client = FakeMcpClient()
+  result = registry.complete("Hello", mcp_client=fake_client)
+
+  assert fake_client.calls == [("notes", "search", {"query": "topic"})]
+  assert result == "final response"
