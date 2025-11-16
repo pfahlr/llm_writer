@@ -36,7 +36,7 @@ steps:
     - Writes Markdown output to TaskSpec.output.
   - Add support for "type: url" references:
     - Introduce a small helper module (e.g. runner/url_fetcher.py) that:
-      - Uses an HTTP client (e.g. httpx or requests) to fetch the URL.
+      - Uses an HTTP client (e.g. httpx or requests) to fetch the URL, or reads from the filesystem when url is of type `file:///`
       - Extracts main text content from HTML or other formats into plain text.
       - Returns a string suitable for normalization/prompt policy.
     - Integrate URL handling into run_tasks_for_paths():

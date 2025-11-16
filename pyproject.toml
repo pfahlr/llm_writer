@@ -25,5 +25,11 @@ dev = [
 [project.scripts]
 srw = "simple_rag_writer.cli.main:main"
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

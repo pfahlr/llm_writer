@@ -9,3 +9,17 @@ Early scaffold for a slim writing assistant that:
 
 This is an incomplete scaffold intended for test-driven development.
 Many components are stubs with TODOs.
+
+## Getting Started
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+srw --help
+srw -c config.yaml plan
+```
+
+The CLI requires a configuration YAML file that declares providers, models,
+and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
+tasks once a config is available, or `srw replay` to inspect planning logs.
