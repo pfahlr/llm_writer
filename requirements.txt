@@ -1,0 +1,17 @@
+# Core runtime dependencies
+pydantic
+PyYAML
+rich
+litellm
+
+# HTTP + HTML-to-text for URL references
+httpx
+beautifulsoup4
+
+# Optional TUI (for the Textual MCP source browser stub)
+textual
+
+# Dev / test tooling
+pytest
+black
+mypy

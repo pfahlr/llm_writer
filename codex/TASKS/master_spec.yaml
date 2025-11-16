@@ -1,0 +1,916 @@
+project:
+  id: simple_rag_writer
+  name: "Simple Rag Writer"
+  version: "0.4.0"
+  description: >
+    A slimmed-down, scriptable writing assistant that orchestrates multiple LLM
+    providers (OpenAI, OpenRouter, Gemini) and uses MCP servers as its only
+    retrieval/knowledge layer. It supports interactive planning chat, automated
+    execution of YAML-described writing tasks into Markdown, and replay of
+    planning prompts from logs.
+
+  goals:
+    - Provide a small, hackable core for multi-model writing workflows.
+    - Avoid bundling any vector DB; all retrieval happens via MCP servers.
+    - Make planning and execution symmetric: what you plan is what you run.
+    - Use argparse for CLI and Rich/Textual for UX where useful.
+    - Use litellm as the unified LLM adapter across providers.
+    - Make configuration “opt-in fancy”: sane defaults, but allow deep tuning.
+    - Support reproducible debugging via log replay.
+
+  non_goals:
+    - Building a full document management system.
+    - Managing embeddings or hosting a vector database.
+    - Heavy GUI or web UI (initially).
+    - Doing full-blown agent frameworks; keep orchestration minimal.
+
+languages:
+  primary: python
+  min_python_version: "3.10"
+
+dependencies:
+  runtime:
+    - name: argparse
+      stdlib: true
+      purpose: "CLI argument parsing for srw binary."
+    - name: rich
+      purpose: "Pretty console output, REPL prompts, tables/panels."
+    - name: textual
+      optional: true
+      purpose: "Optional: richer TUI for planning/source browsing."
+    - name: pydantic
+      purpose: "Typed config and task schemas with validation."
+    - name: pyyaml
+      purpose: "Loading and writing YAML config, tasks, and outlines."
+    - name: litellm
+      purpose: "Unified interface to OpenAI/OpenRouter/Gemini models."
+  dev:
+    - name: pytest
+      purpose: "Unit/integration tests."
+    - name: black
+      purpose: "Code formatting (configured for 2-space indent)."
+    - name: mypy
+      purpose: "Static type checking."
+
+entrypoints:
+  cli_binary: "srw"
+  module_entry: "simple_rag_writer.main:main"
+
+modes:
+  planning:
+    id: plan
+    description: >
+      Interactive back-and-forth chat for outlining, brainstorming, and
+      specifying tasks. Uses a selected model with a REPL and slash commands
+      for model switching and MCP integration.
+    features:
+      - Normal text sends a message to the current model.
+      - Slash commands (v1):
+        - "/models" — list all configured models, marking the active one.
+        - "/model <id>" — switch active model.
+        - "/quit" or "/q" — exit planning mode.
+      - Slash commands (MCP-related, v1 text-based):
+        - "/sources" — list MCP servers and tools (Rich table).
+        - "/use <server> <tool> \"query\" [limit]" — run an MCP tool and display results.
+        - "/inject <indices>" — inject selected MCP results into a context buffer.
+    context_handling:
+      history_window: 5
+      description: "Last 5 turns of user/assistant are included in each prompt."
+      mcp_context:
+        enabled: true
+        description: >
+          MCP-derived snippets can be persisted in an in-memory buffer and
+          prepended to the planning prompt when the user calls /inject.
+    logging:
+      transcript_logging:
+        enabled: true
+        description: >
+          Each planning session is logged as Markdown under logs/ with a
+          timestamped filename, including conversational turns and inline MCP
+          reference details.
+
+  automated:
+    id: run
+    description: >
+      Batch execution of YAML-described writing tasks, each of which outputs a
+      single Markdown draft file. Tasks can reference external knowledge via
+      MCP servers.
+    features:
+      - Input: one or more YAML task files (explicit paths or globs).
+      - Each task:
+        - Resolves optional outline context.
+        - Resolves zero or more references (URL/MCP).
+        - Applies MCP summarization/truncation policy from config and task.
+        - Builds a single prompt using task, context, and reference content.
+        - Calls the selected model and writes a Markdown file to disk.
+      - Outputs:
+        - Print progress to console for each task using Rich.
+        - Write Markdown draft to the configured output path.
+
+  replay:
+    id: replay
+    description: >
+      Reconstruct and optionally re-run the exact prompt used for a specific
+      planning turn by reading a Markdown log file, including stored MCP
+      reference payloads and model parameters.
+    features:
+      - Input: path to a planning log file and a turn index.
+      - Reconstruct:
+        - System prompt used for planning.
+        - MCP context injected at that turn (from mcp-yaml block).
+        - Recent conversation history window.
+      - Output options:
+        - Show reconstructed prompt as plain text / Markdown.
+        - Optionally re-send the prompt to a chosen model for comparison.
+
+cli:
+  program_name: "srw"
+  parser:
+    uses_argparse: true
+    global_options:
+      - name: "--config, -c"
+        required: true
+        help: "Path to config.yaml"
+    subcommands:
+      - name: "plan"
+        description: "Launch interactive planning mode."
+        options:
+          - name: "--model, -m"
+            required: false
+            help: "Initial model id (overrides default_model)."
+      - name: "run"
+        description: "Run one or more YAML writing tasks."
+        args:
+          - name: "tasks"
+            nargs: "+"
+            help: "One or more YAML task paths or glob patterns."
+      - name: "replay"
+        description: "Replay a planning log turn and reconstruct the prompt."
+        options:
+          - name: "--log"
+            required: true
+            help: "Path to a planning log Markdown file."
+          - name: "--turn"
+            required: true
+            type: int
+            help: "Turn index (1-based) to reconstruct."
+          - name: "--show-prompt"
+            action: "store_true"
+            help: "Print the reconstructed prompt to stdout."
+          - name: "--run-model"
+            required: false
+            help: >
+              Optional model id to re-run the reconstructed prompt against.
+              If omitted, do not call any model.
+
+config_schema:
+  path: "config.yaml"
+  type: "AppConfig"
+  fields:
+    default_model:
+      type: string
+      required: true
+      description: "ID of the default model from models[].id."
+    providers:
+      type: map<string, ProviderConfig>
+      required: true
+      description: "Named model providers and their connection details."
+      ProviderConfig:
+        fields:
+          type:
+            type: string
+            enum: ["openai", "openai_compatible", "gemini"]
+            description: >
+              Provider type; used to decide litellm parameters and any special handling.
+          api_key_env:
+            type: string
+            required: false
+            description: "Name of env var holding API key."
+          api_key:
+            type: string
+            required: false
+            description: >
+              Inline API key (for private workstations); takes precedence over api_key_env.
+          base_url:
+            type: string
+            required: false
+            description: "Base URL for openai-compatible providers (e.g., OpenRouter)."
+          model_prefix:
+            type: string
+            required: false
+            description: "Optional prefix hint for model naming (primarily for Gemini)."
+    model_defaults:
+      type: map<string, any>
+      required: false
+      description: "Global default generation params for all models."
+      example:
+        temperature: 0.4
+        max_tokens: 2048
+        top_p: 1.0
+        presence_penalty: 0.0
+        frequency_penalty: 0.0
+    models:
+      type: list<ModelConfig>
+      required: true
+      description: "Concrete, user-friendly identifiers for available models."
+      ModelConfig:
+        fields:
+          id:
+            type: string
+            description: "Used everywhere in the app to refer to this model (e.g., openai:gpt-4.1-mini)."
+          provider:
+            type: string
+            description: "Key into providers map (e.g., openai, openrouter, gemini)."
+          model_name:
+            type: string
+            description: "Underlying API model name as expected by litellm."
+          params:
+            type: map<string, any>
+            required: false
+            description: >
+              Optional per-model default generation params (temperature, max_tokens, etc.).
+    mcp_servers:
+      type: list<McpServerConfig>
+      required: false
+      default: []
+      description: "External MCP servers to use for retrieval/tools."
+      McpServerConfig:
+        fields:
+          id:
+            type: string
+            description: "Logical name used in task references (e.g., notes, papers)."
+          command:
+            type: list<string>
+            description: "Command to start the MCP server (argv form)."
+          auto_start:
+            type: bool
+            required: false
+            default: true
+            description: "If true, start the server automatically when first used."
+    mcp_prompt_policy:
+      type: McpPromptPolicy
+      required: false
+      description: >
+        Controls how MCP tool results are transformed before being included in
+        prompts. Supports raw-capped and summary modes with per-reference overrides.
+      McpPromptPolicy:
+        fields:
+          default_mode:
+            type: string
+            enum: ["raw_capped", "summary"]
+            default: "raw_capped"
+          raw_capped:
+            type: RawCappedPolicy
+            required: false
+            RawCappedPolicy:
+              fields:
+                max_items_per_reference:
+                  type: int
+                  default: 3
+                max_chars_per_item:
+                  type: int
+                  default: 800
+                max_total_chars:
+                  type: int
+                  default: 8000
+          summary:
+            type: SummaryPolicy
+            required: false
+            description: >
+              Settings for summary mode. In summary mode, the client passes
+              full item bodies to the summarizer and relies on the LLM +
+              summary_max_tokens to control length. No pre-truncation of
+              bodies is performed.
+            SummaryPolicy:
+              fields:
+                summarizer_model:
+                  type: string
+                  default: "openai:gpt-4.1-mini"
+                max_items_per_reference:
+                  type: int
+                  default: 10
+                summary_max_tokens:
+                  type: int
+                  default: 512
+                per_type_prompts:
+                  type: map<string, string>
+                  required: false
+                  description: >
+                    Optional mapping from logical item type to a specialized
+                    summarization prompt. For example: "note", "paper",
+                    "web", "legal_case". If a type is not present, the
+                    default_prompt is used.
+                default_prompt:
+                  type: string
+                  required: false
+                  description: >
+                    Fallback summarization prompt used when no type-specific
+                    prompt is found. If omitted, the implementation provides
+                    a generic prompt.
+    logging:
+      type: LoggingConfig
+      required: false
+      description: "Application-level logging configuration."
+      LoggingConfig:
+        fields:
+          planning:
+            type: PlanningLoggingConfig
+            required: false
+            PlanningLoggingConfig:
+              fields:
+                enabled:
+                  type: bool
+                  default: true
+                  description: "If true, log planning sessions as Markdown."
+                dir:
+                  type: string
+                  default: "logs"
+                  description: "Directory to store planning logs."
+                include_mcp_events:
+                  type: bool
+                  default: true
+                  description: >
+                    If true, planning logs include MCP-related commands and
+                    the exact reference text that was injected into the model
+                    context.
+                mcp_inline:
+                  type: bool
+                  default: true
+                  description: >
+                    If true, MCP events are recorded inline between turns at
+                    the point they occurred, rather than in a separate
+                    appendix section.
+
+  example:
+    default_model: "openai:gpt-4.1-mini"
+    providers:
+      openai:
+        type: "openai"
+        api_key_env: "OPENAI_API_KEY"
+      openrouter:
+        type: "openai_compatible"
+        api_key_env: "OPENROUTER_API_KEY"
+        base_url: "https://openrouter.ai/api/v1"
+      gemini:
+        type: "gemini"
+        api_key_env: "GEMINI_API_KEY"
+        model_prefix: "gemini-1.5"
+    model_defaults:
+      temperature: 0.4
+      max_tokens: 2048
+    models:
+      - id: "openai:gpt-4.1-mini"
+        provider: "openai"
+        model_name: "gpt-4.1-mini"
+        params:
+          temperature: 0.3
+          max_tokens: 2048
+      - id: "openai:o3-mini"
+        provider: "openai"
+        model_name: "o3-mini"
+      - id: "openrouter:meta-llama-3-70b-instruct"
+        provider: "openrouter"
+        model_name: "meta-llama-3-70b-instruct"
+        params:
+          temperature: 0.7
+          top_p: 0.9
+          max_tokens: 4096
+      - id: "gemini:1.5-flash"
+        provider: "gemini"
+        model_name: "gemini-1.5-flash"
+    mcp_servers:
+      - id: "notes"
+        command: ["mcp-notes-server"]
+        auto_start: true
+      - id: "papers"
+        command: ["uvx", "mypapers-mcp"]
+        auto_start: true
+    mcp_prompt_policy:
+      default_mode: "raw_capped"
+      raw_capped:
+        max_items_per_reference: 3
+        max_chars_per_item: 800
+        max_total_chars: 8000
+      summary:
+        summarizer_model: "openai:gpt-4.1-mini"
+        max_items_per_reference: 10
+        summary_max_tokens: 512
+        per_type_prompts:
+          note: "Summarize these personal notes into concise bullet points..."
+          paper: "Summarize these legal/academic documents..."
+          web: "Summarize these web pages..."
+          legal_case: "Summarize these legal cases emphasizing facts, holding, and reasoning."
+        default_prompt: "Summarize the following items into a concise set of bullets."
+    logging:
+      planning:
+        enabled: true
+        dir: "logs"
+        include_mcp_events: true
+        mcp_inline: true
+
+task_schema:
+  path_pattern: "tasks/*.yaml"
+  type: "TaskSpec"
+  description: "Declarative specification of a single writing unit (chapter/section/article)."
+  fields:
+    title:
+      type: string
+      required: true
+      description: "Human-readable title for this section."
+    id:
+      type: string
+      required: true
+      description: "Unique identifier for this section across the project."
+    description:
+      type: string
+      required: true
+      description: >
+        Summary and guidance for the section; may include bullet lists, notes,
+        and specific instructions.
+    context:
+      type: ContextSpec
+      required: false
+      description: "Linkage into a larger outline or book structure."
+      ContextSpec:
+        fields:
+          outline_path:
+            type: string
+            required: false
+            description: "Path to a YAML outline that includes this section."
+          outline_id:
+            type: string
+            required: false
+            description: >
+              Node identifier within the outline to use for context. If omitted,
+              implementations may use the task id as a fallback.
+    references:
+      type: list<ReferenceSpec>
+      required: false
+      default: []
+      description: "External references to use as context (URLs, MCP tools, etc.)."
+      ReferenceSpec:
+        common_fields:
+          type:
+            type: string
+            required: true
+            enum: ["url", "mcp"]
+          label:
+            type: string
+            required: false
+            description: "Optional friendly label used in the prompt."
+          item_type:
+            type: string
+            required: false
+            description: >
+              Hint for the logical type of items returned from this MCP
+              reference (e.g., "note", "paper", "web", "legal_case"). Used
+              to select per-type summarization prompts and to enrich logging.
+          prompt_mode:
+            type: string
+            required: false
+            enum: ["raw_capped", "summary"]
+            description: >
+              Optional override for MCP prompt policy mode for this reference.
+          max_items:
+            type: int
+            required: false
+            description: >
+              Optional override for number of items from this reference (applies to both modes).
+          max_chars:
+            type: int
+            required: false
+            description: >
+              Optional override for per-item character cap (raw_capped mode).
+          summary_max_tokens:
+            type: int
+            required: false
+            description: >
+              Optional override for summary token cap (summary mode).
+        url_variant:
+          applies_when_type: "url"
+          fields:
+            url:
+              type: string
+              required: true
+              description: "External URL; initially passed as citation, later possibly summarized via MCP."
+        mcp_variant:
+          applies_when_type: "mcp"
+          fields:
+            server:
+              type: string
+              required: true
+              description: "MCP server id (must match config.mcp_servers[].id)."
+            tool:
+              type: string
+              required: true
+              description: "Tool name exposed by that MCP server."
+            params:
+              type: map<string, any>
+              required: false
+              default: {}
+              description: "Opaque, tool-specific parameters (e.g., query, limit)."
+    output:
+      type: string
+      required: true
+      description: "Path to the output Markdown file to be written."
+    model:
+      type: string
+      required: false
+      description: >
+        Optional model id override for this task. Must match one of
+        config.models[].id (e.g., 'openai:gpt-4.1-mini'). If omitted,
+        config.default_model is used.
+    model_params:
+      type: map<string, any>
+      required: false
+      description: >
+        Optional per-task generation parameters for the model. These are
+        merged into the litellm call and may include fields like:
+          - temperature
+          - max_tokens
+          - top_p
+          - presence_penalty
+          - frequency_penalty
+          - any other model-specific kwargs supported by litellm.
+        Precedence when building the final parameter set:
+          1. config.model_defaults (if present)
+          2. config.models[].params for the selected model (if present)
+          3. TaskSpec.model_params (this field).
+    mcp_error_mode:
+      type: string
+      required: false
+      enum: ["skip_with_warning", "fail_task"]
+      default: "skip_with_warning"
+      description: >
+        Controls how MCP errors are handled for this task in automated mode.
+        - skip_with_warning (default): log a warning to the console and
+          proceed without that reference.
+        - fail_task: abort this task on MCP error and report failure.
+    style:
+      type: string
+      required: false
+      description: "Optional style hint (e.g., memoir, academic, blog)."
+
+  example:
+    title: "Chapter 1: The First Shock"
+    id: "book1-ch01"
+    description: |
+      Draft the first narrative chapter with focus on:
+      - Immediate scene setting
+      - Emotional stakes
+      - Foreshadowing systemic issues
+    context:
+      outline_path: "tasks/outline.yaml"
+      outline_id: "book1-ch01"
+    references:
+      - type: "mcp"
+        label: "Similar CPS cases"
+        server: "papers"
+        tool: "search_cases"
+        item_type: "legal_case"
+        prompt_mode: "summary"
+        params:
+          query: "termination of parental rights due to housing instability"
+          limit: 3
+      - type: "mcp"
+        label: "My journal notes"
+        server: "notes"
+        tool: "search_notes"
+        item_type: "note"
+        prompt_mode: "raw_capped"
+        params:
+          query: "shelter hearing condo betrayal"
+          limit: 5
+    output: "drafts/ch01_intro.md"
+    model: "openai:gpt-4.1-mini"
+    model_params:
+      temperature: 0.25
+      max_tokens: 3000
+    mcp_error_mode: "skip_with_warning"
+    style: "memoir"
+
+outline_schema:
+  path_example: "tasks/outline.yaml"
+  description: >
+    Optional structure file representing a book or multi-part work. Used to
+    provide richer context to individual tasks.
+  shape:
+    id:
+      type: string
+      description: "Identifier for the entire work."
+    title:
+      type: string
+      description: "Title of the work."
+    parts:
+      type: list<Part>
+      description: "Top-level groupings (parts, acts, major sections)."
+      Part:
+        fields:
+          id: string
+          title: string
+          sections:
+            type: list<Section>
+            Section:
+              fields:
+                id: string
+                title: string
+                summary: string
+  example:
+    id: "book1"
+    title: "Our Case Against The Machine"
+    parts:
+      - id: "pt1"
+        title: "Before"
+        sections:
+          - id: "book1-ch01"
+            title: "The First Shock"
+            summary: "Where everything seemed normal until it didn't."
+          - id: "book1-ch02"
+            title: "The Call"
+            summary: "CPS enters the scene."
+      - id: "pt2"
+        title: "During"
+        sections:
+          - id: "book1-ch03"
+            title: "The Plan"
+            summary: "Case plans, hoops, and moving targets."
+
+logging_helper:
+  module: "simple_rag_writer/logging.py"
+  classes:
+    - name: "PlanningLogWriter"
+      description: >
+        Helper responsible for writing planning session transcripts to
+        Markdown files according to logging.planning.* config and the
+        planning_log_format spec. Encapsulates filename creation, header
+        writing, and per-turn logging (including inline MCP references).
+      lifecycle:
+        - The planner initializes a PlanningLogWriter at startup:
+            - If logging.planning.enabled is false, returns a no-op implementation.
+            - Otherwise:
+              - Ensure logging.planning.dir exists.
+              - Create a filename using pattern "plan-YYYYMMDD-HHMMSS.md".
+              - Open the file and write the session header.
+        - During the REPL:
+            - For each turn index N:
+              - start_turn(N, user_text)
+              - if /inject used: log_mcp_injection(N, items)
+              - end_turn(N, assistant_text)
+        - On exit:
+            - close() to flush and close the file.
+      config_dependencies:
+        - logging.planning.enabled
+        - logging.planning.dir
+        - logging.planning.include_mcp_events
+        - logging.planning.mcp_inline
+      data_structures:
+        - name: "McpLogItem"
+          description: "Normalized representation of a single MCP result item for logging."
+          fields:
+            idx: int
+            server: string
+            tool: string
+            label: string | null
+            normalized_id: string | null
+            title: string | null
+            type: string | null
+            snippet: string | null
+            body: string | null
+            url: string | null
+            metadata: map<string, any>
+      methods:
+        - name: "from_config"
+          kind: "classmethod"
+          signature: "(cfg: AppConfig, config_path: Path, default_model_id: str) -> PlanningLogWriter"
+          description: >
+            Factory that inspects cfg.logging.planning.enabled and returns
+            either a real PlanningLogWriter or a no-op. Sets up the log file
+            path and writes the session header.
+        - name: "log_model_used"
+          signature: "(model_id: str) -> None"
+          description: >
+            Record that a given model_id was used in this session; used to
+            populate 'Models used' in the header.
+        - name: "start_turn"
+          signature: "(turn_index: int, user_text: str) -> None"
+          description: >
+            Write the basic structure for a new turn:
+              - '## Turn N'
+              - '**User:**' followed by user_text.
+        - name: "log_mcp_injection"
+          signature: "(turn_index: int, items: list[McpLogItem]) -> None"
+          description: >
+            If include_mcp_events is true, write MCP reference info inline:
+              - '### MCP References Injected'
+              - A small Markdown table summarizing each item:
+                  | idx | server | tool | label | normalized_id | title |
+              - A fenced '```mcp-yaml' block with a YAML document containing
+                full normalized payload for injected items (including body).
+        - name: "end_turn"
+          signature: "(turn_index: int, assistant_text: str) -> None"
+          description: >
+            Complete the turn by writing:
+              - '**Assistant:**' followed by assistant_text.
+        - name: "close"
+          signature: "() -> None"
+          description: >
+            Flush and close the file handle. Safe to call multiple times; later
+            calls are no-ops.
+  log_format:
+    filename_pattern: "plan-YYYYMMDD-HHMMSS.md"
+    header:
+      fields:
+        - timestamp
+        - config_path
+        - default_model_id
+        - models_used
+    per_turn_layout:
+      order:
+        - "## Turn N"
+        - blank_line
+        - "**User:** <user_text>"
+        - optional_mcp_section:
+            heading: "### MCP References Injected"
+            table_columns: ["idx", "server", "tool", "label", "normalized_id", "title"]
+            fenced_block_language: "mcp-yaml"
+            fenced_block_key: "references"
+        - "**Assistant:** <assistant_text>"
+        - blank_line
+
+architecture:
+  modules:
+    - path: "simple_rag_writer/main.py"
+      responsibility: "argparse-based CLI wiring; selects plan vs run vs replay; handles config path."
+    - path: "simple_rag_writer/config.py"
+      responsibility: "Load and validate AppConfig from YAML (providers, models, MCP, policies, logging)."
+    - path: "simple_rag_writer/models.py"
+      responsibility: >
+        ModelRegistry using litellm to talk to OpenAI/OpenRouter/Gemini.
+        Handles api_key vs api_key_env, model_defaults, per-model params,
+        and optional per-task overrides.
+    - path: "simple_rag_writer/mcp_client.py"
+      responsibility: >
+        MCP client abstraction; manages MCP server processes and tool calls.
+        Initial version may be a stub raising NotImplementedError.
+    - path: "simple_rag_writer/tasks.py"
+      responsibility: "TaskSpec and YAML loading for writing tasks."
+    - path: "simple_rag_writer/prompts.py"
+      responsibility: "Prompt builders for tasks and planning mode, including MCP reference injection."
+    - path: "simple_rag_writer/runner.py"
+      responsibility: >
+        Task orchestration: resolve outline context, resolve MCP/url references,
+        apply MCP prompt policy and mcp_error_mode, call model, write output.
+    - path: "simple_rag_writer/planner.py"
+      responsibility: >
+        Interactive planning REPL using Rich; supports slash commands,
+        model switching, MCP /sources and /use, and PlanningLogWriter for logs.
+    - path: "simple_rag_writer/logging.py"
+      responsibility: "Implementation of PlanningLogWriter and related helpers."
+    - path: "simple_rag_writer/replay.py"
+      responsibility: >
+        Functions to parse a planning log, reconstruct the prompt for a given
+        turn (including MCP context), and optionally re-run it via ModelRegistry.
+
+  data_flow:
+    planning_mode:
+      steps:
+        - Parse CLI args; load AppConfig.
+        - Initialize ModelRegistry with config.
+        - Create PlanningLogWriter via from_config().
+        - Optionally set initial model from CLI.
+        - Enter REPL loop:
+          - If line starts with '/', interpret as command:
+            - /models, /model, /sources, /use, /inject, /quit.
+          - Else:
+            - start_turn(N, user_text) on log writer.
+            - Build planning prompt using:
+              - System instructions.
+              - MCP context buffer (if any).
+              - Recent history (last N turns).
+              - Current user message.
+            - Call ModelRegistry.complete with current model + merged params.
+            - log_model_used(current_model_id).
+            - If /inject occurred, log_mcp_injection(N, items) with normalized
+              MCP data for that turn.
+            - end_turn(N, assistant_text) on log writer.
+            - Append (user, assistant) pair to history.
+        - On exit, call log_writer.close().
+    automated_mode:
+      steps:
+        - Parse CLI args; load AppConfig.
+        - Expand any glob patterns into concrete task file paths.
+        - Initialize ModelRegistry and McpClient.
+        - For each task file:
+          - Load TaskSpec from YAML.
+          - Optional: load outline file and extract relevant snippet.
+          - For each reference:
+            - If type=url, create URL blob (optionally summarized via MCP later).
+            - If type=mcp:
+              - Call McpClient.call_tool(server, tool, params).
+              - On MCP error:
+                - If task.mcp_error_mode == "skip_with_warning":
+                  - Log a warning via Rich and skip this reference.
+                - If task.mcp_error_mode == "fail_task":
+                  - Abort this task and report failure.
+              - If successful:
+                - Normalize results into a standard schema (id/title/snippet/body/url/metadata/type).
+                  - Use ReferenceSpec.item_type as a hint for normalized.type if server
+                    does not provide a type.
+                - Apply MCP prompt policy:
+                  - Determine mode (reference.prompt_mode or config.mcp_prompt_policy.default_mode).
+                  - raw_capped:
+                    - Slice to max_items; truncate each to max_chars; ensure total chars <= max_total_chars.
+                  - summary:
+                    - Slice to max_items; pass full bodies to summarizer_model
+                      using type-specific or default prompts; cap output with
+                      summary_max_tokens.
+                - Add processed text to reference_blobs.
+          - Build task prompt from task + outline snippet + reference_blobs.
+          - Determine model_id = task.model or config.default_model.
+          - Merge generation params:
+            - config.model_defaults
+            - + ModelConfig.params
+            - + TaskSpec.model_params
+          - Call ModelRegistry.complete(prompt, model_id, **merged_params).
+          - Create parent directory for TaskSpec.output if needed.
+          - Write model output as Markdown to TaskSpec.output.
+          - Print success status via Rich.
+    replay_mode:
+      steps:
+        - Parse CLI args; load AppConfig (for model lookups if re-running).
+        - Read given log file path.
+        - Parse header to gather metadata (config_path, default_model_id, etc.).
+        - Locate the section for the requested turn index.
+        - Extract:
+          - User text for that turn.
+          - Assistant text (for comparison only).
+          - MCP references from the 'mcp-yaml' fenced block (if present).
+        - Reconstruct prompt:
+          - Rebuild system instructions (same as planning).
+          - Rebuild recent history using preceding turns from the log (up to history_window).
+          - Rebuild MCP context buffer using stored MCP payloads (no new MCP calls).
+        - If --show-prompt:
+          - Print reconstructed prompt to stdout.
+        - If --run-model is provided:
+          - Use ModelRegistry to call that model with the reconstructed prompt.
+          - Print new model output for comparison.
+
+mcp_integration:
+  client_abstraction:
+    type: "McpClient"
+    methods:
+      - name: "call_tool"
+        params:
+          - name: "server_id"
+            type: string
+          - name: "tool_name"
+            type: string
+          - name: "params"
+            type: map<string, any>
+        returns: "McpToolResult"
+  result_type:
+    name: "McpToolResult"
+    fields:
+      server_id: string
+      tool_name: string
+      payload: any
+  normalization:
+    description: >
+      MCP tool results should be mapped into a common internal schema to
+      support generic summarization/truncation, logging, and replay, while
+      still allowing type-specific prompts.
+    schema:
+      fields:
+        id: string | null
+        type: string | null        # logical type: note/paper/web/legal_case/etc.
+        title: string | null
+        snippet: string | null
+        body: string | null
+        url: string | null
+        metadata: map<string, any>
+    strategy:
+      - Implement adapter logic on the client side that maps server-specific
+        shapes into this normalized schema.
+      - Prefer server-provided type metadata when available; otherwise use
+        ReferenceSpec.item_type as a hint/fallback.
+      - Item.type is used to select per-type summarization prompts and to
+        enrich logging (e.g., legal_case vs. generic paper).
+
+textual_ux:
+  v1:
+    description: >
+      Text-based REPL with Rich output; MCP integration via slash commands
+      only. No dedicated Textual layout yet.
+  v2:
+    description: >
+      Optional Textual modal "Source Browser" activated via /sources or a
+      keybinding. The browser provides:
+        - Server list view (notes, papers, websearch).
+        - Tool list for selected server.
+        - Parameter form for tools (query, limit, etc.).
+        - Results list with selection.
+        - Action to "inject selected into context" and return to chat.
+    rationale: >
+      Keeps core REPL simple while offering a richer experience for browsing
+      and injecting MCP results when desired.
+

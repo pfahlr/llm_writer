@@ -1,0 +1,28 @@
+id: 12
+filename: 12_add_textual_source_browser_stub.yaml
+title: Add Textual-based MCP source browser stub (experimental)
+description: >
+  Add a minimal Textual application stub that can be invoked separately
+  to browse MCP results and, in the future, integrate with planning mode.
+
+dependencies:
+  - 06
+
+goals:
+  - Provide a Textual app skeleton that can display a simple list of
+    NormalizedItems.
+  - Keep it optional and non-critical to core flows.
+
+artifacts:
+  - src/simple_rag_writer/mcp/source_browser_app.py
+  - tests/test_source_browser_stub.py
+
+steps:
+  - Create a simple Textual app that:
+    - Uses a static list of NormalizedItems or stubbed data.
+    - Renders them in a scrollable list or table.
+  - Optionally add a CLI hook or doc note.
+
+testing:
+  - Minimal tests to ensure the Textual app class can be instantiated.
+  - Run pytest.

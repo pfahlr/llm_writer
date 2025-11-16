@@ -1,0 +1,34 @@
+id: 06
+filename: 06_implement_mcp_types_and_normalization.yaml
+title: Implement MCP types and normalization helpers
+description: >
+  Implement the core MCP types (McpToolResult, NormalizedItem) and the
+  normalize_payload() helper that converts arbitrary MCP payloads into
+  a uniform structure suitable for summarization and prompt injection.
+
+dependencies:
+  - 02
+
+goals:
+  - NormalizedItem supports id, type, title, snippet, body, url, metadata.
+  - normalize_payload() handles strings, lists of strings, lists of dicts,
+    and falls back to stringified representation for unknown payloads.
+
+artifacts:
+  - src/simple_rag_writer/mcp/types.py
+  - src/simple_rag_writer/mcp/normalization.py
+  - tests/test_mcp_normalization.py
+
+steps:
+  - Review NormalizedItem fields and ensure they are sufficient.
+  - Implement normalize_payload() to:
+    - Accept "payload: Any" plus optional item_type_hint.
+    - Build a list of NormalizedItem, mapping well-known keys and storing
+      the rest in metadata.
+
+testing:
+  - Implement tests that:
+    - Verify string payloads produce a single NormalizedItem with body set.
+    - Verify list[str] and list[dict] payloads normalize correctly.
+    - Verify unknown payload types are stringified and stored in body.
+  - Run pytest.

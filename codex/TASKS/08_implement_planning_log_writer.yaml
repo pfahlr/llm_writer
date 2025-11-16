@@ -1,0 +1,33 @@
+id: 08
+filename: 08_implement_planning_log_writer.yaml
+title: Implement PlanningLogWriter and MCP logging
+description: >
+  Implement PlanningLogWriter to capture planning sessions as Markdown logs
+  with inline MCP reference blocks between turns.
+
+dependencies:
+  - 02
+
+goals:
+  - Planning logs are written under the configured logs directory with
+    timestamped filenames.
+  - Each turn is recorded with user and assistant text.
+  - MCP references can be logged as a table plus a fenced mcp-yaml block.
+
+artifacts:
+  - src/simple_rag_writer/logging/planning_log.py
+  - tests/test_planning_log_writer.py
+
+steps:
+  - Ensure PlanningLogWriter:
+    - Creates logs dir from config.logging.planning.dir.
+    - Writes a header with session start time, config path, default model.
+    - Provides start_turn(), log_mcp_injection(), end_turn(), and close().
+  - Ensure McpLogItem captures enough per-item metadata.
+
+testing:
+  - Implement tests that:
+    - Use a temporary logs directory.
+    - Call start_turn() and end_turn() and assert expected headings.
+    - Call log_mcp_injection() and assert table + mcp-yaml block appear.
+  - Run pytest.

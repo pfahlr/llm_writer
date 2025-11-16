@@ -1,0 +1,36 @@
+id: 05
+filename: 05_implement_prompt_builders.yaml
+title: Implement planning and task prompt builders
+description: >
+  Implement prompt-building functions for planning mode and automated task
+  execution. These functions convert history, outline context, and reference
+  blobs into a single user-facing prompt string.
+
+dependencies:
+  - 03
+  - 04
+
+goals:
+  - build_planning_prompt() composes system-like instructions, optional MCP
+    context, recent history, and the latest user message.
+  - build_task_prompt() composes title/description/style, outline context,
+    reference blobs, and clear Markdown output instructions.
+
+artifacts:
+  - src/simple_rag_writer/prompts/planning.py
+  - src/simple_rag_writer/prompts/task_prompt.py
+  - tests/test_prompt_building.py
+
+steps:
+  - Verify implementations of build_planning_prompt() and build_task_prompt()
+    follow the desired structure and headings.
+  - Ensure planning prompt includes only recent N turns of history.
+  - Ensure task prompt includes all provided reference blobs with numbered
+    sections.
+
+testing:
+  - Implement tests that:
+    - Assert the presence of key headings and user/assistant text.
+    - Assert style and outline context are included when present.
+    - Assert references are numbered and included.
+  - Run pytest.

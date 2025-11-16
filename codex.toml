@@ -1,0 +1,8 @@
+model_reasoning_effort = "high"
+model = "gpt-5-codex"
+streamable_shell = true   
+web_search_request = true 
+rcmp_client = true
+view_image_tool = true
+unified_exec = true
+

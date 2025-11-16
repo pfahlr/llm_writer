@@ -1,0 +1,36 @@
+id: 11
+filename: 11_implement_mcp_prompt_policy_modes.yaml
+title: Implement MCP prompt policy modes (raw_capped, summary)
+description: >
+  Implement the logic to apply the configured MCP prompt policy to
+  NormalizedItems before injecting them into task prompts, including
+  raw_capped and summary modes.
+
+dependencies:
+  - 06
+  - 07
+
+goals:
+  - AppConfig.mcp_prompt_policy.default_mode is honored.
+  - raw_capped mode enforces max_items_per_reference, max_chars_per_item,
+    and max_total_chars.
+  - summary mode uses a summarizer model and per-type prompts.
+
+artifacts:
+  - src/simple_rag_writer/mcp/prompt_policy.py
+  - updates to src/simple_rag_writer/runner/run_tasks.py
+  - tests/test_mcp_prompt_policy.py
+
+steps:
+  - Create mcp/prompt_policy.py with apply_prompt_policy(app_config, items,
+    ref_spec, model_registry) -> str.
+  - Implement raw_capped mode:
+    - Limit number of items per reference.
+    - Truncate bodies to max_chars_per_item.
+    - Enforce max_total_chars across items.
+  - Implement summary mode using a summarizer_model.
+
+testing:
+  - Implement tests using a fake ModelRegistry.
+  - Confirm raw_capped and summary behaviors.
+  - Run pytest.

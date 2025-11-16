@@ -1,0 +1,35 @@
+id: 09
+filename: 09_implement_planning_repl.yaml
+title: Implement PlanningRepl interactive loop
+description: >
+  Implement the interactive planning REPL that uses ModelRegistry,
+  PlanningLogWriter, and the planning prompt builder to support back-and-forth
+  chat with model switching commands.
+
+dependencies:
+  - 03
+  - 05
+  - 08
+
+goals:
+  - PlanningRepl supports free-form user input and commands:
+    /models, /model <id>, /quit.
+  - Each turn logs user and assistant text.
+  - The REPL uses ModelRegistry.complete() with the current model.
+
+artifacts:
+  - src/simple_rag_writer/planning/repl.py
+  - tests/test_planning_repl.py
+
+steps:
+  - Verify run() loop behavior in PlanningRepl:
+    - Shows an initial Rich panel banner.
+    - Handles /models and /model correctly.
+    - Calls build_planning_prompt() with the last N turns of history.
+    - Logs turns using PlanningLogWriter.
+
+testing:
+  - Implement tests that:
+    - Unit test _handle_command() logic.
+    - Use fake ModelRegistry and fake PlanningLogWriter to simulate turns.
+  - Run pytest.

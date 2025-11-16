@@ -1,0 +1,70 @@
+id: 07
+filename: 07_implement_automated_task_runner.yaml
+title: Implement automated task runner orchestration (MCP + URL references)
+description: >
+  Implement run_tasks_for_paths() to orchestrate loading TaskSpecs, resolving
+  references via MCP and via direct URL fetching, building prompts, calling
+  the ModelRegistry, and writing Markdown output files.
+
+dependencies:
+  - 03
+  - 04
+  - 05
+  - 06
+
+goals:
+  - run_tasks_for_paths() expands globs, loads tasks, and runs them in order.
+  - MCP references are resolved via McpClient and normalized into text blobs.
+  - URL references are fetched over HTTP, converted to text, and normalized
+    into text blobs, then passed through the same prompt policy layer.
+  - Task output is written to the configured "output" path in TaskSpec.
+  - mcp_error_mode is honored ("skip_with_warning" vs "fail_task") for MCP
+    references. URL failures are logged and skipped without failing the task
+    by default.
+
+artifacts:
+  - src/simple_rag_writer/runner/run_tasks.py
+  - src/simple_rag_writer/runner/url_fetcher.py
+  - tests/test_runner_run_tasks.py
+
+steps:
+  - Ensure run_tasks_for_paths() currently:
+    - Instantiates McpClient(config).
+    - Expands task paths via expand_task_paths().
+    - For each TaskSpec, resolves MCP references and builds reference blobs.
+    - Builds task prompts and calls registry.complete().
+    - Writes Markdown output to TaskSpec.output.
+  - Add support for "type: url" references:
+    - Introduce a small helper module (e.g. runner/url_fetcher.py) that:
+      - Uses an HTTP client (e.g. httpx or requests) to fetch the URL.
+      - Extracts main text content from HTML or other formats into plain text.
+      - Returns a string suitable for normalization/prompt policy.
+    - Integrate URL handling into run_tasks_for_paths():
+      - For each UrlReference, fetch and convert to text.
+      - Normalize the resulting text (e.g. wrap into a single NormalizedItem
+        or a set of items if you choose to segment it).
+      - Pass normalized items through the same prompt policy layer used for MCP
+        results (raw_capped or summary), producing a final reference blob.
+      - Append the blob to the list of reference_blobs used in the task prompt.
+    - Handle URL errors (network errors, non-200 responses, parse failures):
+      - Log a warning via Rich to the console.
+      - Skip the failing URL reference and continue with the task.
+  - Keep URL fetcher implementation small and dependency-light; avoid coupling
+    it to CLI or LLM logic.
+
+testing:
+  - Implement tests in tests/test_runner_run_tasks.py that:
+    - Use fake ModelRegistry and fake McpClient as before.
+    - Monkeypatch the URL fetcher helper so tests do not perform real network
+      calls.
+    - Verify that when a UrlReference is present, its fetched text is included
+      in the prompt via the reference_blobs list.
+    - Verify that URL fetch failures result in a logged warning and the task
+      still completes successfully.
+  - Run pytest and ensure tests pass.
+
+notes:
+  - Prefer a simple, robust HTML-to-text strategy for now; keep the fetcher
+    and extractor easy to replace later.
+  - If adding new dependencies (httpx, beautifulsoup4, etc.), declare them in
+    pyproject.toml and use them only inside the URL fetcher module.

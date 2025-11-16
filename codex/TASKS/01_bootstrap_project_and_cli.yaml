@@ -1,0 +1,47 @@
+id: 01
+filename: 01_bootstrap_project_and_cli.yaml
+title: Bootstrap project structure and CLI entrypoint
+description: >
+  Ensure the basic project structure, pyproject config, and CLI entrypoint
+  are in place and working as expected. The goal is to be able to run
+  "srw -c config.yaml plan" and see a helpful error if the config is missing
+  or invalid.
+
+context:
+  repo: simple-rag-writer
+  notes: >
+    Some scaffolding already exists under src/simple_rag_writer.
+    This task should verify and refine, not radically change layout.
+
+goals:
+  - Project builds and installs in editable mode with "pip install -e .".
+  - "srw --help" works and shows plan/run/replay subcommands.
+  - Missing or invalid config is handled with a clear error message.
+
+artifacts:
+  - pyproject.toml
+  - src/simple_rag_writer/cli/main.py
+  - README.md
+
+steps:
+  - Review existing project structure and pyproject.toml to ensure it matches
+    the intended "simple-rag-writer" layout.
+  - Confirm the "srw" entrypoint is defined and points to cli.main:main.
+  - Implement or refine argparse wiring in cli/main.py:
+    - Global "-c/--config" option.
+    - "plan", "run", and "replay" subcommands.
+  - Ensure rich traceback is installed and that CLI errors are readable.
+  - Add or update README.md with a short "Getting Started" section showing
+    example commands.
+
+testing:
+  - Add or update minimal tests that:
+    - Import "simple_rag_writer.cli.main".
+    - Call build_parser() and assert subcommands exist.
+  - Run:
+    - pip install -e .
+    - srw --help
+
+notes:
+  - Do not implement planning logic or task execution here; that belongs
+    in later tasks.

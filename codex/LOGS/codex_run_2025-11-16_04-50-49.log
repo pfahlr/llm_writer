@@ -1,0 +1,11 @@
+🚀 Codex Runner @ Sun Nov 16 04:50:49 AM EST 2025
+Working Dir: /home/rick/Development/llm_writer
+Task Dir: codex/TASKS
+Log Dir: codex/LOGS
+Auto-Commit: true
+Config File: ./codex.toml
+Tasks: 01_bootstrap_project_and_cli 02_implement_config_models_and_loader 03_implement_model_registry_and_litellm_integration 04_define_task_spec_and_loader 05_implement_prompt_builders 06_implement_mcp_types_and_normalization 07_implement_automated_task_runner 08_implement_planning_log_writer 09_implement_planning_repl 10_implement_replay_support 11_implement_mcp_prompt_policy_modes 12_add_textual_source_browser_stub
+===========================================
+🟡 Executing task: 01_bootstrap_project_and_cli
+❌ Task 01_bootstrap_project_and_cli may have failed or not confirmed success.
+Not inside a trusted directory and --skip-git-repo-check was not specified.

@@ -1,0 +1,32 @@
+id: 10
+filename: 10_implement_replay_support.yaml
+title: Implement replay and prompt reconstruction from logs
+description: >
+  Implement basic replay functionality that can reconstruct a prompt for a
+  given planning turn from a log file, and optionally run it through an LLM.
+
+dependencies:
+  - 08
+  - 09
+
+goals:
+  - reconstruct_prompt_for_turn(log_path, turn_index) parses the log and
+    builds a reasonable prompt representing that turn's context.
+  - run_replay_prompt(registry, prompt, meta) runs the prompt through a model.
+
+artifacts:
+  - src/simple_rag_writer/replay/reconstruct.py
+  - tests/test_replay_reconstruct.py
+
+steps:
+  - Replace the placeholder implementation with logic that:
+    - Finds the target "## Turn N" section.
+    - Includes prior turns as context where appropriate.
+    - Builds a prompt that can be re-run via the model.
+
+testing:
+  - Implement tests that:
+    - Create a sample log with multiple turns.
+    - Assert reconstruct_prompt_for_turn() returns a prompt that includes
+      the targeted turn and some prior context.
+  - Run pytest.

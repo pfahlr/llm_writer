@@ -1,0 +1,40 @@
+id: 04
+filename: 04_define_task_spec_and_loader.yaml
+title: Define TaskSpec, references, and loader
+description: >
+  Finalize TaskSpec and reference models for YAML-defined writing tasks,
+  and implement loader helpers to load individual tasks and expand glob
+  patterns into concrete paths.
+
+dependencies:
+  - 02
+
+goals:
+  - TaskSpec schema supports:
+    - title, id, description, context, references, output, model,
+      model_params, mcp_error_mode, style.
+  - References support URL and MCP sources with per-reference overrides.
+  - Loader functions can read a YAML file into TaskSpec and expand globs.
+
+artifacts:
+  - src/simple_rag_writer/tasks/models.py
+  - src/simple_rag_writer/tasks/loader.py
+  - tests/test_task_loading.py
+
+steps:
+  - Refine ContextSpec and ReferenceSpec union:
+    - ContextSpec: outline_path, outline_id.
+    - UrlReference: type: "url", url: str.
+    - McpReference: type: "mcp", server, tool, params + overrides.
+  - Ensure TaskSpec.mcp_error_mode defaults to "skip_with_warning".
+  - Implement load_task(path: Path) -> TaskSpec.
+  - Implement expand_task_paths(paths: Iterable[Path]) -> List[Path] with
+    glob handling and deduplication.
+
+testing:
+  - Implement tests in tests/test_task_loading.py:
+    - Loading a minimal TaskSpec with no references.
+    - Loading tasks with url and mcp references.
+    - Verifying default values for mcp_error_mode and model_params.
+    - Verifying glob expansions and deduplication.
+  - Run pytest.

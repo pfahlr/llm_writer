@@ -1,0 +1,43 @@
+id: 03
+filename: 03_implement_model_registry_and_litellm_integration.yaml
+title: Implement ModelRegistry using litellm for multi-provider LLMs
+description: >
+  Implement the ModelRegistry abstraction that uses AppConfig to resolve
+  models and providers, and uses litellm to make completion calls. Handle
+  api_key/api_key_env and per-model/task params.
+
+dependencies:
+  - 02
+
+goals:
+  - ModelRegistry.current_id and .set_current(model_id) work.
+  - ModelRegistry.complete(prompt, model_id?, task_params?) calls litellm
+    with correctly merged parameters.
+  - API keys are taken from api_key or api_key_env with clear errors.
+
+artifacts:
+  - src/simple_rag_writer/llm/params.py
+  - src/simple_rag_writer/llm/registry.py
+  - tests/test_llm_registry.py
+
+steps:
+  - Ensure merge_generation_params() merges:
+    - app_config.model_defaults
+    - model_config.params
+    - task_params (highest priority).
+  - Implement ModelRegistry:
+    - Build a dict of model_id -> ModelConfig.
+    - Verify default_model is present.
+    - Implement list_models(), set_current(), and properties.
+  - Implement complete():
+    - Resolve provider from AppConfig.providers.
+    - Resolve api_key from provider.api_key or provider.api_key_env.
+    - Build litellm.completion kwargs (model, api_key, api_base?, plus params).
+    - Return the assistant message content as a string.
+
+testing:
+  - In tests/test_llm_registry.py:
+    - Mock litellm.completion to avoid network calls.
+    - Confirm that complete() passes the merged params and returns content.
+    - Confirm missing provider or missing API key produces a RuntimeError.
+  - Run pytest and ensure tests pass.

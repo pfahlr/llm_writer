@@ -1,0 +1,39 @@
+id: 02
+filename: 02_implement_config_models_and_loader.yaml
+title: Implement AppConfig models and YAML loader
+description: >
+  Finalize the configuration schema for providers, models, logging, and MCP
+  prompt policy using pydantic. Implement a robust YAML loader that returns
+  an AppConfig with a back-reference to the config path.
+
+dependencies:
+  - 01
+
+goals:
+  - AppConfig can represent:
+    - Providers (OpenAI, OpenRouter, Gemini, etc.).
+    - Named models with per-model params.
+    - Global model defaults.
+    - MCP prompt policy (raw_capped, summary).
+    - Planning logging configuration.
+  - load_config(Path) reads YAML, validates it, and attaches config_path.
+
+artifacts:
+  - src/simple_rag_writer/config/models.py
+  - src/simple_rag_writer/config/loader.py
+  - tests/test_config_loader.py
+
+steps:
+  - Refine ProviderConfig, ModelConfig, AppConfig, and related models.
+  - Implement load_config(path: Path) that:
+    - Reads YAML.
+    - Validates via AppConfig.
+    - Calls .with_path(path) so AppConfig.config_path is set.
+  - Document a minimal example config in README or a comment.
+
+testing:
+  - Implement tests in tests/test_config_loader.py:
+    - A valid config YAML round-trip creates an AppConfig with expected
+      default_model, providers, and models.
+    - Invalid or missing required fields should raise a clear error.
+  - Run pytest and ensure these tests pass.
