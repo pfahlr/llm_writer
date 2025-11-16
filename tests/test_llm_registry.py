@@ -145,6 +145,64 @@ def test_complete_missing_api_key_raises(monkeypatch):
     registry.complete(prompt="Hello")
 
 
+def test_complete_includes_tool_inventory(monkeypatch):
+  captured = {}
+
+  def fake_completion(*, messages, tools=None, **kwargs):
+    captured["messages"] = messages
+    captured["tools"] = tools
+    captured["kwargs"] = kwargs
+    return SimpleNamespace(
+      choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+    )
+
+  monkeypatch.setattr(
+    "simple_rag_writer.llm.registry.litellm",
+    SimpleNamespace(completion=fake_completion),
+  )
+
+  cfg = AppConfig(
+    default_model="openai:gpt-4.1-mini",
+    providers={
+      "openai": ProviderConfig(type="openai", api_key="test-key"),
+    },
+    models=[
+      ModelConfig(
+        id="openai:gpt-4.1-mini",
+        provider="openai",
+        model_name="gpt-4.1-mini",
+      ),
+    ],
+    mcp_servers=[
+      McpServerConfig(id="notes", command=["notes-cmd"]),
+    ],
+  )
+  registry = ModelRegistry(cfg)
+
+  class FakeMcpClient:
+    def list_tools(self, server: str):
+      assert server == "notes"
+      return [
+        {
+          "name": "search",
+          "description": "Search notes",
+          "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+          },
+        }
+      ]
+
+    def call_tool(self, *args, **kwargs):
+      raise RuntimeError("should not be called")
+
+  registry.complete(prompt="Hello", mcp_client=FakeMcpClient())
+
+  assert "Available tools" in captured["messages"][0]["content"]
+  assert "Search notes" in captured["messages"][0]["content"]
+  tool_def = captured["tools"][0]
+  assert "search" in tool_def["parameters"]["properties"]["tool"]["enum"]
+  assert "Tool parameter hints" in tool_def["parameters"]["properties"]["params"]["description"]
 def test_complete_handles_mcp_tool_calls(monkeypatch):
   calls: List[Dict[str, Any]] = []
 
