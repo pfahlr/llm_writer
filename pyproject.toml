@@ -9,11 +9,14 @@ description = "Simplified rag_writer-style tool with MCP and multi-provider LLMs
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "anyio>=4.0",
   "pydantic>=2.0",
   "PyYAML>=6.0",
   "python-dotenv>=1.0",
   "rich>=13.0",
   "litellm>=1.0.0",
+  "mcp>=1.0.0",
+  "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]

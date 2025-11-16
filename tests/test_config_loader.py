@@ -108,3 +108,37 @@ def test_load_config_rejects_invalid_prompt_policy_mode(tmp_path: Path) -> None:
     load_config(path)
 
   assert "default_mode" in str(excinfo.value)
+
+
+def test_load_config_accepts_litellm_model_and_defaults(tmp_path: Path) -> None:
+  cfg_text = dedent(
+    """
+    default_model: "openrouter:mistral-small"
+    providers:
+      openrouter:
+        type: "openrouter"
+        api_key_env: "OPENROUTER_API_KEY"
+    models:
+      - id: "openrouter:mistral-small"
+        provider: "openrouter"
+        litellm_model: "openrouter/mistralai/mistral-small"
+        label: "Mistral Small"
+        tags: ["mistral", "planning"]
+        max_context_tokens: 131072
+        default_params:
+          temperature: 0.15
+          top_p: 0.9
+    """
+  )
+  path = tmp_path / "config.yaml"
+  path.write_text(cfg_text, encoding="utf-8")
+
+  cfg = load_config(path)
+
+  model = cfg.models[0]
+  assert model.id == "openrouter:mistral-small"
+  assert model.model_name == "openrouter/mistralai/mistral-small"
+  assert model.label == "Mistral Small"
+  assert model.tags == ["mistral", "planning"]
+  assert model.max_context_tokens == 131072
+  assert model.params == {"temperature": 0.15, "top_p": 0.9}

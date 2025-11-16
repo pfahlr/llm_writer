@@ -225,3 +225,14 @@ models:
       top_p: 0.98
       max_tokens: 4096
     tags: ["venice", "uncensored", "creative"]
+
+mcp_servers:
+  - id: arxiv
+    command:
+      - "uv"
+      - "tool"
+      - "run"
+      - "arxiv-mcp-server"
+      - "--storage-path"
+      - "/home/rick/.cache/arxiv-papers"
+    auto_start: true

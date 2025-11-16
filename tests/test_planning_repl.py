@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
-from rich.panel import Panel
+from typing import Dict, List, Optional, Sequence, Tuple
 
-from simple_rag_writer.config.models import AppConfig, ModelConfig, ProviderConfig
+from rich.panel import Panel
+from rich.table import Table
+
+from simple_rag_writer.config.models import (
+  AppConfig,
+  McpServerConfig,
+  ModelConfig,
+  ProviderConfig,
+)
+from simple_rag_writer.mcp.types import McpToolResult
 from simple_rag_writer.planning import repl as repl_module
 from simple_rag_writer.planning.repl import PlanningRepl
 
 
-def _make_config() -> AppConfig:
+def _make_config(
+  *,
+  mcp_servers: Optional[Sequence[McpServerConfig]] = None,
+) -> AppConfig:
   return AppConfig(
     default_model="writer",
     providers={"local": ProviderConfig(type="openai", api_key="dummy")},
@@ -17,6 +28,7 @@ def _make_config() -> AppConfig:
       ModelConfig(id="writer", provider="local", model_name="Writer Model"),
       ModelConfig(id="editor", provider="local", model_name="Editor Model"),
     ],
+    mcp_servers=list(mcp_servers or []),
   )
 
 
@@ -48,11 +60,38 @@ class _FakeModelRegistry:
     return f"assistant-{len(self.completions)}"
 
 
+class _FakeMcpClient:
+  def __init__(
+    self,
+    payload: Optional[List[Dict[str, str]]] = None,
+    tools: Optional[Dict[str, List[Dict[str, str]]]] = None,
+  ) -> None:
+    self.payload = payload or [
+      {"title": "Notebook entry", "body": "Alpha body", "url": "https://example.com/spec"},
+      {"title": "Second entry", "body": "Beta body"},
+    ]
+    self.tools = tools or {
+      "notes": [
+        {"name": "search", "description": "Search notes"},
+        {"name": "recent", "description": "Recent updates"},
+      ]
+    }
+    self.calls: List[Tuple[str, str, Dict[str, object]]] = []
+
+  def call_tool(self, server: str, tool: str, params: Dict[str, object]) -> McpToolResult:
+    self.calls.append((server, tool, params))
+    return McpToolResult(server_id=server, tool_name=tool, payload=list(self.payload))
+
+  def list_tools(self, server: str) -> List[Dict[str, str]]:
+    return list(self.tools.get(server, []))
+
+
 class _FakePlanningLogWriter:
   def __init__(self) -> None:
     self.started: List[Tuple[int, str]] = []
     self.ended: List[Tuple[int, str]] = []
     self.models_used: List[str] = []
+    self.injections: List[Tuple[int, List[object]]] = []
     self.closed = False
 
   def start_turn(self, turn_index: int, user_text: str) -> None:
@@ -60,6 +99,9 @@ class _FakePlanningLogWriter:
 
   def log_model_used(self, model_id: str) -> None:
     self.models_used.append(model_id)
+
+  def log_mcp_injection(self, turn_index: int, items) -> None:  # noqa: ANN001 - helper for tests
+    self.injections.append((turn_index, list(items)))
 
   def end_turn(self, turn_index: int, assistant_text: str) -> None:
     self.ended.append((turn_index, assistant_text))
@@ -87,10 +129,17 @@ class _FakeConsole:
     return self._inputs.pop(0)
 
 
-def _make_repl(monkeypatch, *, console_inputs: Optional[Sequence[str]] = None) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
+def _make_repl(
+  monkeypatch,
+  *,
+  console_inputs: Optional[Sequence[str]] = None,
+  config: Optional[AppConfig] = None,
+  mcp_payload: Optional[List[Dict[str, str]]] = None,
+) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
   registry = _FakeModelRegistry()
   log_writer = _FakePlanningLogWriter()
-  repl = PlanningRepl(_make_config(), registry, log_writer)
+  fake_client = _FakeMcpClient(payload=mcp_payload)
+  repl = PlanningRepl(config or _make_config(), registry, log_writer, mcp_client=fake_client)
   fake_console = _FakeConsole(console_inputs)
   monkeypatch.setattr(repl_module, "console", fake_console)
   return repl, registry, log_writer, fake_console
@@ -104,6 +153,27 @@ def test_handle_command_lists_models_with_current_marker(monkeypatch) -> None:
     "* writer (Writer Model)",
     "  editor (Editor Model)",
   ]
+
+
+def test_handle_command_lists_sources(monkeypatch) -> None:
+  config = _make_config(
+    mcp_servers=[
+      McpServerConfig(id="notes", command=["notes-cmd"]),
+      McpServerConfig(id="papers", command=["papers", "--flag"]),
+    ]
+  )
+  repl, _, _, fake_console = _make_repl(monkeypatch, config=config)
+
+  assert repl._handle_command("/sources") is False
+  table = fake_console.printed[-1]
+  assert isinstance(table, Table)
+  assert table.row_count == 2
+  assert table.columns[0]._cells == ["notes", "papers"]
+  assert "search" in table.columns[1]._cells[0]
+  assert "Search notes" in table.columns[1]._cells[0]
+  # ensure tools column shows placeholder when unavailable
+  assert table.columns[1]._cells[1] == "—"
+  assert table.columns[1].header.lower() == "tools"
 
 
 def test_handle_command_switches_models_and_reports_errors(monkeypatch) -> None:
@@ -121,6 +191,36 @@ def test_handle_command_allows_quit(monkeypatch) -> None:
   repl, _, _, _ = _make_repl(monkeypatch)
   assert repl._handle_command("/quit") is True
   assert repl._handle_command("/q") is True
+
+
+def test_handle_command_use_runs_mcp_tool_and_stores_results(monkeypatch) -> None:
+  repl, _, _, fake_console = _make_repl(monkeypatch)
+
+  assert repl._handle_command('/use notes search "outline ideas" 2') is False
+  batch = repl._last_batch
+  assert batch is not None
+  assert batch.source == "mcp"
+  assert batch.server == "notes"
+  assert batch.tool == "search"
+  assert len(batch.items) == len(repl._mcp_client.payload)
+  assert repl._mcp_client.calls == [("notes", "search", {"query": "outline ideas", "limit": 2})]
+  table = fake_console.printed[-1]
+  assert isinstance(table, Table)
+  assert table.row_count == len(batch.items)
+
+
+def test_handle_command_url_fetches_and_sets_batch(monkeypatch) -> None:
+  repl, _, _, fake_console = _make_repl(monkeypatch)
+  monkeypatch.setattr(repl_module, "fetch_url_text", lambda url: "URL body text for " + url)
+
+  assert repl._handle_command('/url https://example.com/spec "Spec Doc"') is False
+  batch = repl._last_batch
+  assert batch is not None
+  assert batch.source == "url"
+  assert batch.url == "https://example.com/spec"
+  assert batch.label == "Spec Doc"
+  assert batch.items and "URL body text" in batch.items[0].body
+  assert "Spec Doc" in fake_console.printed[-1]
 
 
 def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
@@ -194,3 +294,48 @@ def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
     ("five", "assistant-5"),
     ("six", "assistant-6"),
   ]
+
+
+def test_run_loop_injects_context_and_logs(monkeypatch) -> None:
+  repl, registry, log_writer, fake_console = _make_repl(
+    monkeypatch,
+    console_inputs=[
+      '/use notes search "outline ideas"',
+      "/inject 1",
+      "Draft plan please",
+      "/quit",
+    ],
+  )
+
+  prompt_calls: List[Tuple[List[Tuple[str, str]], str, Optional[str]]] = []
+
+  def fake_prompt_builder(
+    history: List[Tuple[str, str]],
+    user_message: str,
+    mcp_context: Optional[str],
+    history_window: int = 5,
+  ) -> str:
+    prompt_calls.append((list(history), user_message, mcp_context))
+    return "prompt-with-context"
+
+  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
+
+  repl.run()
+
+  assert log_writer.started == [(1, "Draft plan please")]
+  assert log_writer.injections and log_writer.injections[0][0] == 1
+  assert "Alpha body" in log_writer.injections[0][1][0].body
+  assert prompt_calls[-1][2] is not None
+  assert "Alpha body" in prompt_calls[-1][2]
+
+
+def test_context_command_prints_current_buffer(monkeypatch) -> None:
+  repl, _, _, fake_console = _make_repl(monkeypatch)
+
+  assert repl._handle_command('/use notes search "outline ideas"') is False
+  assert repl._handle_command("/inject 1") is False
+  assert repl._handle_command("/context") is False
+
+  panel = fake_console.printed[-1]
+  assert isinstance(panel, Panel)
+  assert "Alpha body" in panel.renderable

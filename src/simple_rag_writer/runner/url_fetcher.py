@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+from io import BytesIO
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, url2pathname, urlopen
+
+try:  # pragma: no cover - dependency is optional at import time
+  from pypdf import PdfReader
+except ImportError:  # pragma: no cover
+  PdfReader = None
+
+from simple_rag_writer.mcp.types import NormalizedItem
+from simple_rag_writer.tasks.models import UrlReference
 
 DEFAULT_USER_AGENT = "simple-rag-writer/0.1"
 
@@ -59,12 +68,29 @@ def _html_to_text(html: str) -> str:
   return text or html
 
 
+def _pdf_bytes_to_text(data: bytes) -> str:
+  if PdfReader is None:  # pragma: no cover - exercised when dependency missing
+    raise RuntimeError("pypdf is required to extract PDF text")
+  reader = PdfReader(BytesIO(data))
+  chunks: List[str] = []
+  for page in reader.pages:
+    try:
+      page_text = page.extract_text() or ""
+    except Exception:  # pragma: no cover - defensive against parser quirks
+      page_text = ""
+    if page_text:
+      chunks.append(page_text.strip())
+  return "\n\n".join(chunk for chunk in chunks if chunk).strip()
+
+
 def fetch_url_text(url: str, *, timeout: float = 15.0) -> str:
   parsed = urlparse(url)
   scheme = (parsed.scheme or "").lower()
 
   if scheme in {"", "file"}:
     path = _extract_file_path(url)
+    if path.suffix.lower() == ".pdf":
+      return _pdf_bytes_to_text(path.read_bytes())
     return path.read_text(encoding="utf-8")
 
   if scheme not in {"http", "https"}:
@@ -79,12 +105,27 @@ def fetch_url_text(url: str, *, timeout: float = 15.0) -> str:
     except Exception:  # pragma: no cover - very old Python versions only
       charset = None
     data = response.read()
-
+  lower_content_type = content_type.lower()
+  if "pdf" in lower_content_type or parsed.path.lower().endswith(".pdf"):
+    return _pdf_bytes_to_text(data)
   encoding = charset or "utf-8"
   text = data.decode(encoding, errors="replace")
-  if "html" in content_type.lower():
+  if "html" in lower_content_type:
     return _html_to_text(text)
   return text
 
 
-__all__ = ["fetch_url_text"]
+def build_url_items(reference: UrlReference, text: str) -> List[NormalizedItem]:
+  body = text.strip()
+  return [
+    NormalizedItem(
+      id=reference.url,
+      type=reference.item_type or "url",
+      title=reference.label or reference.url,
+      body=body,
+      url=reference.url,
+    )
+  ]
+
+
+__all__ = ["fetch_url_text", "build_url_items", "_pdf_bytes_to_text"]

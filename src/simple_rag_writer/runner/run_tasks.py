@@ -11,9 +11,8 @@ from simple_rag_writer.llm.registry import ModelRegistry
 from simple_rag_writer.mcp.client import McpClient
 from simple_rag_writer.mcp.normalization import normalize_payload
 from simple_rag_writer.mcp.prompt_policy import apply_prompt_policy
-from simple_rag_writer.mcp.types import NormalizedItem
 from simple_rag_writer.prompts.task_prompt import build_task_prompt
-from simple_rag_writer.runner.url_fetcher import fetch_url_text
+from simple_rag_writer.runner.url_fetcher import build_url_items, fetch_url_text
 from simple_rag_writer.tasks.loader import expand_task_paths, load_task
 from simple_rag_writer.tasks.models import McpReference, ReferenceCommon, UrlReference
 
@@ -32,18 +31,6 @@ def _wrap_reference_label(reference: ReferenceCommon, text: Optional[str]) -> Op
   if reference.label:
     return f"{reference.label}\n{text}"
   return text
-
-
-def _url_items(reference: UrlReference, text: str) -> List[NormalizedItem]:
-  return [
-    NormalizedItem(
-      id=reference.url,
-      type=reference.item_type or "url",
-      title=reference.label or reference.url,
-      body=text.strip(),
-      url=reference.url,
-    )
-  ]
 
 
 def run_tasks_for_paths(
@@ -89,7 +76,7 @@ def run_tasks_for_paths(
             continue
           if not fetched.strip():
             continue
-          items = _url_items(ref, fetched)
+          items = build_url_items(ref, fetched)
           blob = apply_prompt_policy(config, items, ref, registry)
           wrapped = _wrap_reference_label(ref, blob)
           if wrapped:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ProviderConfig(BaseModel):
@@ -19,6 +19,24 @@ class ModelConfig(BaseModel):
   provider: str
   model_name: str
   params: Dict[str, Any] = Field(default_factory=dict)
+  label: Optional[str] = None
+  tags: List[str] = Field(default_factory=list)
+  max_context_tokens: Optional[int] = None
+
+  @model_validator(mode="before")
+  @classmethod
+  def _apply_aliases(cls, data: Any) -> Any:
+    if not isinstance(data, dict):
+      return data
+    normalized = dict(data)
+    if "model_name" not in normalized:
+      alias_value = normalized.get("litellm_model") or normalized.get("model")
+      if alias_value:
+        normalized["model_name"] = alias_value
+    if "params" not in normalized and "default_params" in normalized:
+      defaults = normalized.pop("default_params") or {}
+      normalized["params"] = defaults
+    return normalized
 
 
 class RawCappedPolicy(BaseModel):

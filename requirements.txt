@@ -1,9 +1,12 @@
 # Core runtime dependencies
+anyio
 pydantic
 PyYAML
 python-dotenv
 rich
 litellm
+mcp
+pypdf
 
 # HTTP + HTML-to-text for URL references
 httpx
