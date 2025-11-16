@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import shlex
-from functools import partial
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, List, Optional, Tuple
 
 from rich.console import Console
@@ -17,6 +17,7 @@ from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
 from simple_rag_writer.mcp.client import McpClient
 from simple_rag_writer.mcp.normalization import normalize_payload
 from simple_rag_writer.mcp.types import NormalizedItem
+from simple_rag_writer.planning.memory import ManualMemoryEntry, ManualMemoryStore
 from simple_rag_writer.prompts.planning import (
   DEFAULT_HISTORY_WINDOW,
   build_planning_prompt,
@@ -48,6 +49,7 @@ class PlanningRepl:
     log_writer: PlanningLogWriter,
     mcp_client: Optional[McpClient] = None,
     prompts: Optional[PromptsFile] = None,
+    memory_store: Optional[ManualMemoryStore] = None,
   ) -> None:
     self._config = config
     self._registry = model_registry
@@ -64,6 +66,7 @@ class PlanningRepl:
     self._prompts: Dict[str, PromptDefinition] = dict(prompt_library)
     self._selected_prompt_id: Optional[str] = None
     self._selected_system_prompt: Optional[str] = None
+    self._memory_store = memory_store or ManualMemoryStore()
 
   def run(self) -> None:
     console.print(
@@ -72,6 +75,7 @@ class PlanningRepl:
         "/models list models, /model <id> switches.\n"
         "/sources shows MCP servers, /use and /url fetch references.\n"
         "/prompts lists system prompts, /prompt <id|default> selects one.\n"
+        "/remember label:: text saves manual memory. /memory list|inject manage it.\n"
         "/inject adds selected references to context, /context inspects it, /quit exits.",
         title="Simple Rag Writer",
       )
@@ -161,7 +165,13 @@ class PlanningRepl:
       self._show_prompts()
       return False
     if cmd == "/prompt":
-      self._configure_prompt(args)
+      self._configure_prompt(line[len(cmd) :].strip())
+      return False
+    if cmd == "/remember":
+      self._remember_text(line[len(cmd) :].strip())
+      return False
+    if cmd == "/memory":
+      self._handle_memory_command(args)
       return False
     if cmd == "/sources":
       self._list_sources()
@@ -219,17 +229,17 @@ class PlanningRepl:
     )
     console.print(status)
 
-  def _configure_prompt(self, args: List[str]) -> None:
+  def _configure_prompt(self, raw: str) -> None:
     if not self._prompts:
       console.print("[yellow]No prompts available.[/yellow]")
       return
-    if not args:
+    choice = raw.strip()
+    if not choice:
       if self._selected_prompt_id:
         console.print(f"Using prompt [bold]{self._selected_prompt_id}[/bold].")
       else:
         console.print("Using model default system prompt.")
       return
-    choice = args[0]
     if choice.lower() in {"default", "clear", "none"}:
       self._selected_prompt_id = None
       self._selected_system_prompt = None
@@ -245,6 +255,107 @@ class PlanningRepl:
     self._selected_prompt_id = choice
     self._selected_system_prompt = prompt.system_prompt.strip()
     console.print(f"[green]Selected prompt[/green] [bold]{choice}[/bold]: {prompt.label}")
+
+  def _remember_text(self, raw: str) -> None:
+    text = (raw or "").strip()
+    if not text:
+      console.print("[yellow]Usage: /remember label:: important note[/yellow]")
+      return
+    label: Optional[str] = None
+    body = text
+    if "::" in text:
+      label_text, body_text = text.split("::", 1)
+      if body_text.strip():
+        label = label_text.strip() or None
+        body = body_text
+    try:
+      entry = self._memory_store.add(body.strip(), label=label)
+    except ValueError as exc:
+      console.print(f"[yellow]{exc}[/yellow]")
+      return
+    label_desc = f" ({entry.label})" if entry.label else ""
+    console.print(f"[green]Saved memory {entry.entry_id}{label_desc}.[/green]")
+
+  def _handle_memory_command(self, args: List[str]) -> None:
+    if not args:
+      console.print(
+        "[yellow]Usage: /memory list | show <id> | inject <id> | delete <id> | clear[/yellow]"
+      )
+      return
+    action = args[0].lower()
+    if action == "list":
+      self._list_memory_entries()
+      return
+    if action == "show":
+      if len(args) < 2:
+        console.print("[yellow]Usage: /memory show <id>[/yellow]")
+        return
+      self._show_memory_entry(args[1])
+      return
+    if action == "inject":
+      if len(args) < 2:
+        console.print("[yellow]Usage: /memory inject <id>[/yellow]")
+        return
+      self._inject_memory_entry(args[1])
+      return
+    if action == "delete":
+      if len(args) < 2:
+        console.print("[yellow]Usage: /memory delete <id>[/yellow]")
+        return
+      removed = self._memory_store.delete(args[1])
+      if removed:
+        console.print(f"[green]Deleted memory entry {args[1]}.[/green]")
+      else:
+        console.print(f"[yellow]No memory entry found for id {args[1]}.[/yellow]")
+      return
+    if action == "clear":
+      self._memory_store.clear()
+      console.print("[green]Cleared all manual memory entries.[/green]")
+      return
+    console.print(f"[yellow]Unknown /memory action:[/yellow] {action}")
+
+  def _list_memory_entries(self) -> None:
+    entries = self._memory_store.list_entries()
+    if not entries:
+      console.print("[yellow]No saved memory entries.[/yellow]")
+      return
+    table = Table(title="Manual Memory")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Label")
+    table.add_column("Snippet")
+    for entry in entries:
+      snippet = entry.text.replace("\n", " ").strip()
+      snippet = snippet[:80] + ("…" if len(snippet) > 80 else "")
+      table.add_row(entry.entry_id, entry.label or "—", snippet or "—")
+    console.print(table)
+
+  def _show_memory_entry(self, entry_id: str) -> None:
+    entry = self._memory_store.get(entry_id)
+    if not entry:
+      console.print(f"[yellow]No memory entry found with id {entry_id}.[/yellow]")
+      return
+    title = entry.label or entry_id
+    console.print(Panel(entry.text, title=f"Memory {entry_id}: {title}"))
+
+  def _inject_memory_entry(self, entry_id: str) -> None:
+    entry = self._memory_store.get(entry_id)
+    if not entry:
+      console.print(f"[yellow]No memory entry found with id {entry_id}.[/yellow]")
+      return
+    chunk = self._build_memory_chunk(entry)
+    if not chunk:
+      console.print("[yellow]Memory entry has no text to inject.[/yellow]")
+      return
+    self._context_chunks.append(chunk)
+    self._mcp_context = "\n\n".join(self._context_chunks).strip()
+    console.print(f"[green]Injected memory entry {entry.entry_id} into context.[/green]")
+
+  def _build_memory_chunk(self, entry: ManualMemoryEntry) -> str:
+    label = entry.label or f"memory-{entry.entry_id}"
+    content = entry.text.strip()
+    if not content:
+      return ""
+    return f"### {label}\n{content}".strip()
 
   def _list_sources(self) -> None:
     servers = self._config.mcp_servers

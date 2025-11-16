@@ -14,6 +14,7 @@ from simple_rag_writer.config.models import (
   ProviderConfig,
 )
 from simple_rag_writer.mcp.types import McpToolResult
+from simple_rag_writer.planning.memory import ManualMemoryStore
 from simple_rag_writer.planning import repl as repl_module
 from simple_rag_writer.planning.repl import MCP_QUERY_HISTORY_LIMIT, PlanningRepl
 
@@ -148,6 +149,7 @@ def _make_repl(
   config: Optional[AppConfig] = None,
   mcp_payload: Optional[List[Dict[str, str]]] = None,
   prompts: Optional["PromptsFile"] = None,
+  memory_store: Optional[ManualMemoryStore] = None,
 ) -> Tuple[PlanningRepl, _FakeModelRegistry, _FakePlanningLogWriter, _FakeConsole]:
   registry = _FakeModelRegistry()
   log_writer = _FakePlanningLogWriter()
@@ -158,6 +160,7 @@ def _make_repl(
     log_writer,
     mcp_client=fake_client,
     prompts=prompts,
+    memory_store=memory_store or ManualMemoryStore(),
   )
   fake_console = _FakeConsole(console_inputs)
   monkeypatch.setattr(repl_module, "console", fake_console)
@@ -227,6 +230,37 @@ def test_show_prompts_lists_available_entries(monkeypatch) -> None:
   repl._handle_command("/prompts")
 
   assert any(isinstance(entry, Table) for entry in fake_console.printed)
+
+
+def test_remember_command_saves_entry(monkeypatch) -> None:
+  store = ManualMemoryStore()
+  repl, _, _, fake_console = _make_repl(
+    monkeypatch,
+    console_inputs=["/remember meeting-notes::We agreed on scope", "/memory list", "/quit"],
+    memory_store=store,
+  )
+
+  repl.run()
+
+  entries = store.list_entries()
+  assert len(entries) == 1
+  assert entries[0].label == "meeting-notes"
+  assert any(isinstance(entry, Table) for entry in fake_console.printed)
+
+
+def test_memory_inject_adds_text_to_context(monkeypatch) -> None:
+  store = ManualMemoryStore()
+  entry = store.add("Remember to mention evaluation metrics.", label="Metrics")
+  repl, _, _, _ = _make_repl(
+    monkeypatch,
+    console_inputs=[f"/memory inject {entry.entry_id}", "/context", "/quit"],
+    memory_store=store,
+  )
+
+  repl.run()
+
+  assert repl._mcp_context is not None
+  assert "evaluation metrics" in repl._mcp_context
 
 
 def test_handle_command_lists_sources(monkeypatch) -> None:

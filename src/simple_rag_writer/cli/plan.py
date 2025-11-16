@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from rich.console import Console
 
 from simple_rag_writer.config import PromptsFile, load_prompts_config
 from simple_rag_writer.config.models import AppConfig
 from simple_rag_writer.llm.registry import ModelRegistry
 from simple_rag_writer.logging.planning_log import PlanningLogWriter
+from simple_rag_writer.planning.memory import ManualMemoryStore
 from simple_rag_writer.planning.repl import PlanningRepl
 
 _console = Console()
@@ -37,12 +40,16 @@ def run_planning_mode(config: AppConfig, initial_model: str | None = None) -> in
   )
 
   prompts = _load_prompts_for_config(config)
+  log_dir = Path(config.logging.planning.dir)
+  memory_path = log_dir / "manual_memory.json"
+  memory_store = ManualMemoryStore(path=memory_path)
 
   repl = PlanningRepl(
     config=config,
     model_registry=registry,
     log_writer=log_writer,
     prompts=prompts,
+    memory_store=memory_store,
   )
   repl.run()
   return 0
