@@ -113,6 +113,19 @@ verify that the server is listed, and then call `/use arxiv <tool> "query" <n>`
 to fetch data. The same `arxiv` id can be referenced from automated task YAML
 via `references` entries.
 
+### MCP Servers 
+
+Please see the following for documentation regarding the MCP Servers in the default `config.yaml`
+
+- [MCP SERVERS LIST](./MCP_SERVERS.md)
+
+### Models 
+
+Please see the following for documentation regarding the LLM models in the default `config.yaml`
+
+- [LLM MODELS LIST](./MODELS.md)
+
+
 ## Usage
 
 `srw` exposes three high-level commands.
