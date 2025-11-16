@@ -91,3 +91,43 @@ def test_list_tools_exposes_skill_enum() -> None:
   schema = tools[0]["inputSchema"]
   assert schema["properties"]["skill"]["enum"] == ["reason", "summarize"]
   assert schema["properties"]["skill"]["default"] == "reason"
+
+
+def test_call_tool_retries_with_feedback() -> None:
+  class _FlakyRegistry(_FakeRegistry):
+    def __init__(self) -> None:
+      super().__init__()
+      self.attempt = 0
+
+    def complete(self, prompt: str, model_id: str | None = None, task_params=None, mcp_client=None) -> str:
+      self.attempt += 1
+      if self.attempt == 1:
+        raise RuntimeError("bad format")
+      return super().complete(prompt, model_id=model_id, task_params=task_params, mcp_client=mcp_client)
+
+  config = _make_config()
+  registry = _FlakyRegistry()
+  handler = LlmToolHandler(config, registry=registry)
+
+  handler.call_tool({"prompt": "Need update", "skill": "reason"})
+
+  assert registry.attempt == 2
+  assert len(registry.calls) == 1
+  prompt = registry.calls[0]["prompt"]
+  assert "SYSTEM FEEDBACK" in prompt
+  assert "bad format" in prompt
+
+
+def test_call_tool_returns_error_after_retries() -> None:
+  class _FailingRegistry(_FakeRegistry):
+    def complete(self, prompt: str, model_id: str | None = None, task_params=None, mcp_client=None) -> str:
+      raise RuntimeError("network timeout")
+
+  config = _make_config()
+  handler = LlmToolHandler(config, registry=_FailingRegistry())
+
+  result = handler.call_tool({"prompt": "Retry please"})
+
+  assert result["isError"] is True
+  assert "network timeout" in result["content"][0]["text"]
+  assert result["structuredContent"]["items"] == []

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from simple_rag_writer.config.loader import load_config
 from simple_rag_writer.config.models import AppConfig, LlmToolConfig
+from simple_rag_writer.llm.executor import LlmCompletionError, run_completion_with_feedback
 from simple_rag_writer.llm.registry import ModelRegistry
 
 LATEST_PROTOCOL_VERSION = "2025-06-18"
@@ -59,7 +60,25 @@ class LlmToolHandler:
     if not model_id:
       raise ValueError(f"Unknown skill '{skill}'. Available: {list(self._tool_config.skills.keys())}")
     task_params = self._build_task_params(arguments)
-    response = self._registry.complete(prompt, model_id=model_id, task_params=task_params)
+    try:
+      response = run_completion_with_feedback(
+        self._registry,
+        prompt,
+        model_id=model_id,
+        task_params=task_params,
+        max_attempts=2,
+      )
+    except LlmCompletionError as exc:
+      return {
+        "content": [
+          {
+            "type": "text",
+            "text": f"LLM skill '{skill}' failed after retries: {exc.message}",
+          }
+        ],
+        "structuredContent": {"items": []},
+        "isError": True,
+      }
     text = (response or "").strip()
     item = {
       "id": f"{self._tool_config.id}:{skill}",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import shlex
+from functools import partial
 from typing import List, Optional, Tuple
 
 from rich.console import Console
@@ -10,6 +11,7 @@ from rich.table import Table
 
 from simple_rag_writer.config.models import AppConfig
 from simple_rag_writer.llm.registry import ModelRegistry
+from simple_rag_writer.llm.executor import LlmCompletionError, run_completion_with_feedback
 from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
 from simple_rag_writer.mcp.client import McpClient
 from simple_rag_writer.mcp.normalization import normalize_payload
@@ -87,8 +89,21 @@ class PlanningRepl:
       window = max(HISTORY_WINDOW, 0)
       history_slice = self._history[-window:] if window else []
       prompt = build_planning_prompt(history_slice, line, self._mcp_context)
-      output = self._attempt_completion(prompt)
-      if output is None:
+      try:
+        output = run_completion_with_feedback(
+          self._registry,
+          prompt,
+          mcp_client=self._mcp_client,
+          max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
+          on_attempt_failure=partial(
+            self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
+          ),
+        )
+      except LlmCompletionError as exc:
+        message = exc.message
+        error_text = f"LLM call failed: {message}"
+        console.print(f"[red]{error_text}[/red]")
+        self._log.end_turn(self._turn_index, error_text)
         continue
       tool_events = self._registry.pop_tool_events()
       if tool_events:
@@ -100,43 +115,13 @@ class PlanningRepl:
 
     self._log.close()
 
-  def _attempt_completion(self, prompt: str) -> Optional[str]:
-    attempt = 0
-    effective_prompt = prompt
-    last_error: Optional[str] = None
-    while attempt < MAX_LLM_COMPLETION_ATTEMPTS:
-      attempt += 1
-      try:
-        return self._registry.complete(effective_prompt, mcp_client=self._mcp_client)
-      except Exception as exc:  # noqa: BLE001
-        message = str(exc).strip() or exc.__class__.__name__
-        last_error = message
-        console.print(
-          f"[red]LLM call failed (attempt {attempt}/{MAX_LLM_COMPLETION_ATTEMPTS}): {message}[/red]"
-        )
-        if attempt >= MAX_LLM_COMPLETION_ATTEMPTS:
-          error_text = f"LLM call failed: {message}"
-          self._log.end_turn(self._turn_index, error_text)
-          return None
-        effective_prompt = self._inject_error_feedback(prompt, message)
-    if last_error:
-      final_text = f"LLM call failed: {last_error}"
-      self._log.end_turn(self._turn_index, final_text)
-    return None
-
-  @staticmethod
-  def _inject_error_feedback(prompt: str, error_message: str) -> str:
-    sanitized_prompt = prompt.rstrip()
-    sanitized_error = error_message.strip()
-    feedback = (
-      "SYSTEM FEEDBACK:\n"
-      "The previous LLM completion attempt failed with the following error:\n"
-      f"{sanitized_error}\n"
-      "Please adjust your response formatting and retry."
-    )
-    if sanitized_prompt:
-      return f"{sanitized_prompt}\n\n{feedback}"
-    return feedback
+  def _report_retry_attempt(
+    self, max_attempts: int, attempt: int, message: str, will_retry: bool
+  ) -> None:
+    if not will_retry:
+      return
+    text = f"LLM call failed (attempt {attempt}/{max_attempts}): {message}"
+    console.print(f"[red]{text}[/red]")
 
   def _handle_command(self, line: str) -> bool:
     try:

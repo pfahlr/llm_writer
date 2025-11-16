@@ -14,6 +14,19 @@ from simple_rag_writer.config.models import AppConfig, McpServerConfig
 from .types import McpToolResult
 
 
+class McpToolError(RuntimeError):
+  def __init__(self, server_id: str, tool_name: str, message: str):
+    super().__init__(message)
+    self.server_id = server_id
+    self.tool_name = tool_name
+
+  def __str__(self) -> str:
+    base = super().__str__()
+    if base:
+      return f"[{self.server_id}:{self.tool_name}] {base}"
+    return f"[{self.server_id}:{self.tool_name}]"
+
+
 class McpClient:
   """
   Placeholder for MCP client. Responsibilities:
@@ -41,7 +54,7 @@ class McpClient:
     server = self._get_server(server_id)
     async with self._connect(server) as session:
       result = await session.call_tool(tool_name, params or {})
-    payload = self._extract_payload(result)
+    payload = self._extract_payload(result, server_id, tool_name)
     return McpToolResult(server_id=server_id, tool_name=tool_name, payload=payload)
 
   def _get_server(self, server_id: str) -> McpServerConfig:
@@ -65,10 +78,12 @@ class McpClient:
   def _normalize_tool(self, tool: mcp_types.Tool) -> Dict[str, Any]:
     return tool.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-  def _extract_payload(self, result: mcp_types.CallToolResult) -> Any:
+  def _extract_payload(
+    self, result: mcp_types.CallToolResult, server_id: str, tool_name: str
+  ) -> Any:
     if result.isError:
       message = self._first_text_block(result) or "MCP tool returned an error"
-      raise RuntimeError(message)
+      raise McpToolError(server_id, tool_name, message)
     if result.structuredContent is not None:
       return self._unwrap_structured(result.structuredContent)
     if not result.content:
