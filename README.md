@@ -129,6 +129,10 @@ builds prompts with optional MCP context. Slash commands include:
   - `/use <server> <tool> "query" [limit]`: call an MCP tool and display results.
     You can also provide key/value args like `query:"text" paper_id:"1234"` to
     pass multiple parameters to the tool.
+  - Planning and task prompts now include a `call_mcp_tool` function hint so the
+    model can request additional MCP data on its own. The tool expects JSON with
+    `server`, `tool`, and optional `params`, and the REPL/runner feeds the result
+    back into the conversation automatically.
   - `/inject <indices>`: inject selected MCP items into the internal context
     buffer.
   - `/context`: preview the accumulated MCP context that will be prepended to

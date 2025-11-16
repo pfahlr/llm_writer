@@ -86,7 +86,7 @@ class PlanningRepl:
       window = max(HISTORY_WINDOW, 0)
       history_slice = self._history[-window:] if window else []
       prompt = build_planning_prompt(history_slice, line, self._mcp_context)
-      output = self._registry.complete(prompt)
+      output = self._registry.complete(prompt, mcp_client=self._mcp_client)
       self._log.log_model_used(self._registry.current_id)
       self._log.end_turn(self._turn_index, output)
       console.print(f"[bold green]{output}[/bold green]")

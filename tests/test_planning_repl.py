@@ -55,7 +55,13 @@ class _FakeModelRegistry:
       raise KeyError(model_id)
     self.current_id = model_id
 
-  def complete(self, prompt: str, model_id: Optional[str] = None, task_params=None) -> str:  # pragma: no cover - exercised via tests
+  def complete(
+    self,
+    prompt: str,
+    model_id: Optional[str] = None,
+    task_params=None,
+    mcp_client=None,
+  ) -> str:  # pragma: no cover - exercised via tests
     self.completions.append(prompt)
     return f"assistant-{len(self.completions)}"
 

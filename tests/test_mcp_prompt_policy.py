@@ -18,7 +18,13 @@ class FakeModelRegistry:
     self.response = response
     self.calls = []
 
-  def complete(self, prompt: str, model_id: str | None = None, task_params=None) -> str:
+  def complete(
+    self,
+    prompt: str,
+    model_id: str | None = None,
+    task_params=None,
+    mcp_client=None,
+  ) -> str:
     self.calls.append(
       {
         "prompt": prompt,

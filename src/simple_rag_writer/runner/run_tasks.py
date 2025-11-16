@@ -85,7 +85,12 @@ def run_tasks_for_paths(
       prompt = build_task_prompt(task, outline_context, reference_blobs)
 
       model_id = task.model or config.default_model
-      output_text = registry.complete(prompt, model_id=model_id, task_params=task.model_params)
+      output_text = registry.complete(
+        prompt,
+        model_id=model_id,
+        task_params=task.model_params,
+        mcp_client=client,
+      )
 
       out_path = Path(task.output)
       out_path.parent.mkdir(parents=True, exist_ok=True)

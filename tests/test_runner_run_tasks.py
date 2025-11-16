@@ -22,7 +22,13 @@ class DummyRegistry:
   def __init__(self) -> None:
     self.calls = []
 
-  def complete(self, prompt: str, model_id: str | None = None, task_params=None) -> str:
+  def complete(
+    self,
+    prompt: str,
+    model_id: str | None = None,
+    task_params=None,
+    mcp_client=None,
+  ) -> str:
     call = {
       "prompt": prompt,
       "model_id": model_id,
