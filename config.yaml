@@ -259,3 +259,8 @@ mcp_servers:
       - "srw_llm_tool.py"
       - "--config"
       - "config.yaml"
+  - id: "dre"
+    command:
+      - "npx"
+      - "deliberate-reasoning-engine"
+
