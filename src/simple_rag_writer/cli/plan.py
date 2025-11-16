@@ -5,7 +5,6 @@ from simple_rag_writer.planning.repl import PlanningRepl
 from simple_rag_writer.logging.planning_log import PlanningLogWriter
 from simple_rag_writer.config.models import AppConfig
 
-
 def run_planning_mode(config: AppConfig, initial_model: str | None = None) -> int:
   registry = ModelRegistry(config)
   if initial_model:

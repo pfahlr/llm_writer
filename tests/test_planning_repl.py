@@ -367,6 +367,76 @@ def test_run_loop_injects_context_and_logs(monkeypatch) -> None:
   assert "Alpha body" in prompt_calls[-1][2]
 
 
+def test_run_loop_retries_after_llm_error(monkeypatch) -> None:
+  repl, registry, log_writer, fake_console = _make_repl(
+    monkeypatch,
+    console_inputs=[
+      "Need outline",
+      "/quit",
+    ],
+  )
+
+  base_prompt = "Prompt base"
+  monkeypatch.setattr(
+    repl_module,
+    "build_planning_prompt",
+    lambda history, user, ctx, history_window=5: base_prompt,
+  )
+
+  original_complete = registry.complete
+  prompts: List[str] = []
+
+  def flaky_complete(prompt, model_id=None, task_params=None, mcp_client=None):
+    prompts.append(prompt)
+    if len(prompts) == 1:
+      raise RuntimeError("bad format around MCP tool block")
+    return original_complete(prompt, model_id=model_id, task_params=task_params, mcp_client=mcp_client)
+
+  registry.complete = flaky_complete  # type: ignore[assignment]
+
+  repl.run()
+
+  assert log_writer.started == [(1, "Need outline")]
+  assert log_writer.ended == [(1, "assistant-1")]
+  assert log_writer.models_used == ["writer"]
+  assert repl._history == [("Need outline", "assistant-1")]
+  assert len(prompts) == 2
+  assert prompts[0] == base_prompt
+  assert "SYSTEM FEEDBACK" in prompts[1]
+  assert "bad format" in prompts[1]
+  assert any("attempt 1" in str(msg) for msg in fake_console.printed if isinstance(msg, str))
+
+
+def test_run_loop_recovers_from_llm_errors(monkeypatch) -> None:
+  repl, registry, log_writer, fake_console = _make_repl(
+    monkeypatch,
+    console_inputs=[
+      "Need outline",
+      "/quit",
+    ],
+  )
+
+  def failing_complete(*_args, **_kwargs):
+    raise RuntimeError("model exploded")
+
+  registry.complete = failing_complete  # type: ignore[assignment]
+  monkeypatch.setattr(
+    repl_module,
+    "build_planning_prompt",
+    lambda history, user, ctx, history_window=5: "prompt-error",
+  )
+
+  repl.run()
+
+  assert log_writer.started == [(1, "Need outline")]
+  assert log_writer.ended == [(1, "LLM call failed: model exploded")]
+  assert log_writer.models_used == []
+  assert repl._history == []
+  assert any(
+    isinstance(msg, str) and "LLM call failed" in msg for msg in fake_console.printed
+  )
+
+
 def test_context_command_prints_current_buffer(monkeypatch) -> None:
   repl, _, _, fake_console = _make_repl(monkeypatch)
 

@@ -23,6 +23,7 @@ from simple_rag_writer.tasks.models import UrlReference
 
 console = Console()
 HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
+MAX_LLM_COMPLETION_ATTEMPTS = 2
 
 
 @dataclass
@@ -86,7 +87,9 @@ class PlanningRepl:
       window = max(HISTORY_WINDOW, 0)
       history_slice = self._history[-window:] if window else []
       prompt = build_planning_prompt(history_slice, line, self._mcp_context)
-      output = self._registry.complete(prompt, mcp_client=self._mcp_client)
+      output = self._attempt_completion(prompt)
+      if output is None:
+        continue
       tool_events = self._registry.pop_tool_events()
       if tool_events:
         console.print(Panel("\n\n".join(tool_events), title="LLM tool trace"))
@@ -96,6 +99,44 @@ class PlanningRepl:
       self._history.append((line, output))
 
     self._log.close()
+
+  def _attempt_completion(self, prompt: str) -> Optional[str]:
+    attempt = 0
+    effective_prompt = prompt
+    last_error: Optional[str] = None
+    while attempt < MAX_LLM_COMPLETION_ATTEMPTS:
+      attempt += 1
+      try:
+        return self._registry.complete(effective_prompt, mcp_client=self._mcp_client)
+      except Exception as exc:  # noqa: BLE001
+        message = str(exc).strip() or exc.__class__.__name__
+        last_error = message
+        console.print(
+          f"[red]LLM call failed (attempt {attempt}/{MAX_LLM_COMPLETION_ATTEMPTS}): {message}[/red]"
+        )
+        if attempt >= MAX_LLM_COMPLETION_ATTEMPTS:
+          error_text = f"LLM call failed: {message}"
+          self._log.end_turn(self._turn_index, error_text)
+          return None
+        effective_prompt = self._inject_error_feedback(prompt, message)
+    if last_error:
+      final_text = f"LLM call failed: {last_error}"
+      self._log.end_turn(self._turn_index, final_text)
+    return None
+
+  @staticmethod
+  def _inject_error_feedback(prompt: str, error_message: str) -> str:
+    sanitized_prompt = prompt.rstrip()
+    sanitized_error = error_message.strip()
+    feedback = (
+      "SYSTEM FEEDBACK:\n"
+      "The previous LLM completion attempt failed with the following error:\n"
+      f"{sanitized_error}\n"
+      "Please adjust your response formatting and retry."
+    )
+    if sanitized_prompt:
+      return f"{sanitized_prompt}\n\n{feedback}"
+    return feedback
 
   def _handle_command(self, line: str) -> bool:
     try:
