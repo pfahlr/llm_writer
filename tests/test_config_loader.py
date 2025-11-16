@@ -123,6 +123,8 @@ def test_load_config_accepts_litellm_model_and_defaults(tmp_path: Path) -> None:
         provider: "openrouter"
         litellm_model: "openrouter/mistralai/mistral-small"
         label: "Mistral Small"
+        system_prompt: |
+          You are a thoughtful assistant.
         tags: ["mistral", "planning"]
         max_context_tokens: 131072
         default_params:
@@ -139,6 +141,7 @@ def test_load_config_accepts_litellm_model_and_defaults(tmp_path: Path) -> None:
   assert model.id == "openrouter:mistral-small"
   assert model.model_name == "openrouter/mistralai/mistral-small"
   assert model.label == "Mistral Small"
+  assert model.system_prompt.startswith("You are a thoughtful")
   assert model.tags == ["mistral", "planning"]
   assert model.max_context_tokens == 131072
   assert model.params == {"temperature": 0.15, "top_p": 0.9}

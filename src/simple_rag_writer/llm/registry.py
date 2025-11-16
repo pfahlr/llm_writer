@@ -65,6 +65,7 @@ class ModelRegistry:
     model_id: Optional[str] = None,
     task_params: Optional[Dict[str, Any]] = None,
     mcp_client: Optional[McpClient] = None,
+    system_prompt: Optional[str] = None,
   ) -> str:
     if litellm is None:
       raise RuntimeError("litellm is required to perform completions")
@@ -84,17 +85,23 @@ class ModelRegistry:
 
     kwargs.update(gen_params)
 
-    system_message: Optional[Dict[str, str]] = None
+    system_content: Optional[str] = None
     tool_metadata: Dict[str, List[Dict[str, Any]]] = {}
     has_mcp_tools = self._should_enable_mcp_tools(mcp_client)
-    if has_mcp_tools and mcp_client is not None:
+    if system_prompt:
+      system_content = system_prompt.strip()
+    elif has_mcp_tools and mcp_client is not None:
       tool_metadata = self._collect_mcp_tool_metadata(mcp_client)
-    system_message = {
-      "role": "system",
-      "content": self._build_mcp_tool_instruction(tool_metadata),
-    }
+      system_content = self._build_mcp_tool_instruction(tool_metadata)
+    elif model.system_prompt:
+      system_content = model.system_prompt.strip()
+    else:
+      system_content = "You are a helpful writing assistant."
 
-    messages: List[Dict[str, object]] = [system_message, {"role": "user", "content": prompt}]
+    messages: List[Dict[str, object]] = []
+    if system_content:
+      messages.append({"role": "system", "content": system_content})
+    messages.append({"role": "user", "content": prompt})
 
     supports_functions = self._provider_supports_function_calls(provider)
     tools_payload = [self._build_mcp_tool_definition(tool_metadata)] if supports_functions and has_mcp_tools else None

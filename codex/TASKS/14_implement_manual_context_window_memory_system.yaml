@@ -1,0 +1,334 @@
+id: 14
+file: 14_implement_manual_context_window_memory_system.yaml
+title: Implement manual context window memory system
+project: llm_writer
+version: 0.1.0
+
+summary: >
+  Introduce a model+prompt-based skill layer and wire in long-lived context
+  via memory-bank-mcp and/or llm-context.py. Skills become (model, system_prompt)
+  pairs, and writing-task prompts live in a dedicated YAML file.
+
+changes:
+  - id: 01_add_system_prompt_registry
+    description: >
+      Add a standalone YAML file where users can define system prompts
+      for different types of writing tasks.
+    files:
+      - path: prompts/system_prompts.yaml
+        op: create_if_missing
+        contents: |-
+          # System prompts for llm_writer skills
+          #
+          # Keys here are referenced by skills in config.yaml
+          # under `system_prompt_id`.
+          #
+          # Users can freely edit/extend this file.
+
+          blog_outline:
+            description: "High-level blog post outline generator."
+            prompt: |
+              You are an expert non-fiction writing assistant.
+              Given a topic and a short description, you produce a clear,
+              logically structured outline for a blog post targeted at a
+              general technical audience. Avoid writing the full article;
+              focus on headings and sub-headings with 1–2 bullets each.
+
+          story_draft:
+            description: "Fictional short story drafting assistant."
+            prompt: |
+              You help draft engaging fictional short stories in a clear,
+              accessible style. Preserve the user's voice while suggesting
+              improvements to pacing, characterization, and descriptive detail.
+
+          technical_spec:
+            description: "Technical design / spec writing assistant."
+            prompt: |
+              You help the user turn rough notes into clean technical
+              design documents. Focus on clarity, concrete decisions,
+              explicit tradeoffs, and implementation details suitable
+              for engineers.
+
+          writing_context_summarizer:
+            description: "Summarizes prior conversation into compact YAML."
+            prompt: |
+              You are a summarizer that compresses the relevant parts
+              of a writing session into a compact YAML block suitable
+              for re-use as context. Preserve decisions, constraints,
+              and key examples; omit small talk.
+
+  - id: 02_extend_config_yaml_for_models_and_skills
+    description: >
+      Extend config.yaml so that:
+      - each model is declared explicitly
+      - skills are (model, system_prompt_id) combinations
+      - the system_prompts.yaml file is referenced
+      - an optional memory section describes how to use memory-bank-mcp
+        and/or llm-context for shared context windows.
+    files:
+      - path: config.yaml
+        op: upsert
+        schema_patch:
+          # Path to the system-prompt registry introduced above.
+          system_prompts_file: "prompts/system_prompts.yaml"
+
+          # List of available models (backed by MCP LLM tools).
+          models:
+            - id: "openai_gpt_5_1_mini"
+              label: "OpenAI GPT 5.1 Mini"
+              mcp_server: "openai"          # logical/server name
+              mcp_tool: "llm.complete"      # or whatever tool name is used
+              model_name: "gpt-5.1-mini"
+              max_output_tokens: 4096
+              temperature: 0.7
+              top_p: 1.0
+              default: true
+
+            - id: "openai_gpt_4o_mini"
+              label: "OpenAI GPT 4o Mini"
+              mcp_server: "openai"
+              mcp_tool: "llm.complete"
+              model_name: "gpt-4.1-mini"
+              max_output_tokens: 4096
+              temperature: 0.7
+              top_p: 1.0
+
+            # Add other provider/model combos as needed (e.g., Anthropic, local, etc.)
+
+          # Skills are what the UI / CLI actually exposes.
+          # Each one chooses a model and a system_prompt_id from system_prompts.yaml.
+          skills:
+            - id: "blog_outline_default"
+              label: "Blog outline (default model)"
+              model_id: "openai_gpt_5_1_mini"
+              system_prompt_id: "blog_outline"
+              memory:
+                enabled: true
+                strategy: "memory_bank"      # or "llm_context"
+                session_scope: "project+file"
+                memory_bank:
+                  mcp_server: "memory-bank"
+                  tool_read: "memory.read"
+                  tool_write: "memory.write"
+                  key_template: "llm_writer:{project_id}:{file_path}"
+                  max_entries: 64
+                llm_context:
+                  mcp_server: "llm-context"
+                  tool: "context.manage"
+                  # Implementation detail: how to map session IDs, etc.
+                summary:
+                  # When initializing a brand-new skill session for a
+                  # model that lacks prior context, use this summarizer
+                  # prompt to reconstruct a compact YAML context block.
+                  system_prompt_id: "writing_context_summarizer"
+                  max_chars: 4000
+
+            - id: "story_draft_creative"
+              label: "Story drafting (creative)"
+              model_id: "openai_gpt_4o_mini"
+              system_prompt_id: "story_draft"
+              memory:
+                enabled: true
+                strategy: "memory_bank"
+                session_scope: "project+file"
+                memory_bank:
+                  mcp_server: "memory-bank"
+                  tool_read: "memory.read"
+                  tool_write: "memory.write"
+                  key_template: "llm_writer:{project_id}:{file_path}:story"
+                  max_entries: 128
+                summary:
+                  system_prompt_id: "writing_context_summarizer"
+                  max_chars: 4000
+
+            - id: "technical_spec_default"
+              label: "Technical spec writer"
+              model_id: "openai_gpt_5_1_mini"
+              system_prompt_id: "technical_spec"
+              memory:
+                enabled: false
+
+          # Optional: global defaults for memory behavior.
+          memory_defaults:
+            # Whether to inject YAML context summaries automatically
+            # when we detect a cold start (no prior memory for the key).
+            inject_summary_on_cold_start: true
+            # Whether to skip re-injecting summaries if the memory provider
+            # already has an active session/context window for this skill+file.
+            skip_summary_if_session_exists: true
+
+  - id: 03_register_memory_mcp_servers
+    description: >
+      Register memory-bank-mcp and/or llm-context.py as MCP servers so that
+      skills can call them via the `memory` configuration above.
+    files:
+      - path: mcp_servers.json
+        op: upsert
+        json_patch:
+          # Add or merge entries for the two memory-related MCP servers.
+          memory-bank:
+            command: "memory-bank-mcp"
+            args: []
+            env: {}
+            enabled: true
+
+          llm-context:
+            command: "llm-context"
+            args: []
+            env: {}
+            enabled: false  # flip to true when configured
+
+  - id: 04_update_llm_tool_to_use_models_and_skills
+    description: >
+      Refactor the llm_tool implementation so that:
+      - It loads `config.yaml` and `system_prompts.yaml`.
+      - Each tool/command corresponds to a `skill` entry.
+      - When a call comes in, it:
+        1) resolves the skill by id
+        2) finds the configured model
+        3) looks up the system prompt by `system_prompt_id`
+        4) optionally decorates the call with memory/context based on
+           `skill.memory` and `memory_defaults`.
+    files:
+      - path: src/llm_tool.py
+        op: modify
+        notes: |-
+          High-level changes:
+            - Introduce config loading types for:
+                - ModelConfig
+                - SkillConfig
+                - MemoryConfig
+            - Replace any hard-coded model names or system prompts
+              with lookups from the loaded configuration.
+            - Expose one MCP tool method per skill (or a single
+              method that accepts `skill_id` as a parameter).
+            - When constructing the request for the underlying LLM MCP tool:
+                * prepend the resolved system prompt to the conversation
+                  (or use the "system" role if the underlying protocol supports it).
+                * if memory is enabled:
+                    - determine a memory key from (project, file, skill)
+                      according to `memory.session_scope` and
+                      `memory.memory_bank.key_template`.
+                    - call memory-bank / llm-context before the LLM call
+                      to retrieve a stored context window, if any.
+                    - only inject the YAML summary from
+                      `writing_context_summarizer` when:
+                        * memory is enabled
+                        * `inject_summary_on_cold_start` is true
+                        * the memory provider reports no existing session/data.
+                    - after the LLM response, write the new turn(s)
+                      back to the memory provider.
+
+  - id: 05_add_config_loading_helpers
+    description: >
+      Add small helper module(s) to load/validate config.yaml and
+      system_prompts.yaml, so that llm_tool remains focused on tool logic.
+    files:
+      - path: src/config_loader.py
+        op: create_if_missing
+        contents: |-
+          from dataclasses import dataclass
+          from pathlib import Path
+          from typing import Dict, List, Optional
+
+          import yaml
+
+
+          @dataclass
+          class ModelConfig:
+            id: str
+            label: str
+            mcp_server: str
+            mcp_tool: str
+            model_name: str
+            max_output_tokens: int
+            temperature: float = 0.7
+            top_p: float = 1.0
+            default: bool = False
+
+
+          @dataclass
+          class MemoryConfig:
+            enabled: bool = False
+            strategy: str = "memory_bank"
+            session_scope: str = "project+file"
+            memory_bank: Optional[dict] = None
+            llm_context: Optional[dict] = None
+            summary: Optional[dict] = None
+
+
+          @dataclass
+          class SkillConfig:
+            id: str
+            label: str
+            model_id: str
+            system_prompt_id: str
+            memory: MemoryConfig
+
+
+          def load_yaml(path: Path) -> dict:
+            with path.open("r", encoding="utf-8") as f:
+              return yaml.safe_load(f) or {}
+
+
+          def load_config(config_path: Path) -> dict:
+            return load_yaml(config_path)
+
+
+          def load_system_prompts(path: Path) -> Dict[str, dict]:
+            data = load_yaml(path)
+            # Normalize: each key maps to {"description": ..., "prompt": ...}
+            return {
+              key: value if isinstance(value, dict) else {"prompt": str(value)}
+              for key, value in data.items()
+            }
+
+        notes: |-
+          - Wire this helper into src/llm_tool.py (or equivalent entrypoint),
+            rather than re-parsing YAML in multiple places.
+          - Optionally add minimal tests to ensure config loading
+            and type conversion work as expected.
+
+  - id: 06_add_documentation_stub
+    description: >
+      Add a short doc explaining how to configure models, skills, and
+      system prompts, and how memory-bank / llm-context are used.
+    files:
+      - path: docs/configuration.md
+        op: create_if_missing
+        contents: |-
+          # llm_writer Configuration
+
+          ## System prompts
+
+          System prompts for different writing tasks live in:
+
+          - `prompts/system_prompts.yaml`
+
+          Each top-level key is a `system_prompt_id` referenced by
+          `skills` in `config.yaml`.
+
+          ## Models and skills
+
+          In `config.yaml`:
+
+          - `models` declare which underlying LLM endpoints exist.
+          - `skills` are user-facing tools combining:
+              * a `model_id`
+              * a `system_prompt_id`
+              * optional `memory` behavior
+
+          ## Memory and shared context
+
+          llm_writer can optionally use:
+
+          - `memory-bank-mcp`
+          - `llm-context.py`
+
+          to maintain a shared context window across repeated calls.
+          This allows different skills (or different models) to share
+          a summarized YAML context for the same project/file without
+          always re-sending the full history.
+
+          See the comments in `config.yaml` for details on how the
+          memory configuration works.

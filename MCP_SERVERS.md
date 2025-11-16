@@ -17,6 +17,7 @@ You can find lots of MCP Tool Servers to use with this software at the following
 - [MCP Servers Awesomelist #2](https://github.com/appcypher/awesome-mcp-servers)
 - [MCP Servers Awesomelist #3](https://github.com/TensorBlock/awesome-mcp-servers)
 - [MCP Servers Awesomelist #4](https://github.com/jaw9c/awesome-remote-mcp-servers)
+- [MCP Servers Awesomelist #5](https://github.com/wong2/awesome-mcp-servers)
 - [Cursor's Directory of MCP Servers](https://cursor.directory/mcp)
 - [Docker's Directory of MCP Servers](https://hub.docker.com/u/mcp)
 - [github.com/modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)

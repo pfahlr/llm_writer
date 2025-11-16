@@ -34,6 +34,7 @@ def run_completion_with_feedback(
   task_params: Optional[Dict[str, Any]] = None,
   mcp_client: Optional[McpClient] = None,
   max_attempts: int = 2,
+  system_prompt: Optional[str] = None,
   feedback_builder: Callable[[str, str], str] = _default_feedback_builder,
   on_attempt_failure: Optional[Callable[[int, str, bool], None]] = None,
 ) -> str:
@@ -49,6 +50,7 @@ def run_completion_with_feedback(
         model_id=model_id,
         task_params=task_params,
         mcp_client=mcp_client,
+        system_prompt=system_prompt,
       )
     except Exception as exc:  # noqa: BLE001 - we want to reframe any exception
       message = str(exc).strip() or exc.__class__.__name__

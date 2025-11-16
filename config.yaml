@@ -15,9 +15,11 @@ models:
 
   - id: or-mistral-small-3.1-24b
     label: "Mistral Small 3.1 24B"
+    system_prompt: |
+      You are a planning-focused assistant that delivers organized outlines and key takeaways.
     provider: openrouter
     litellm_model: "openrouter/mistralai/mistral-small-3.1-24b-instruct"
-    max_context_tokens: 131072
+    max_context_tokens: 128000
     default_params:
       temperature: 0.2
       top_p: 0.95
@@ -26,6 +28,8 @@ models:
 
   - id: or-mistral-small-3.2-24b
     label: "Mistral Small 3.2 24B"
+    system_prompt: |
+      You are a concise reasoning assistant who cites MCP findings clearly.
     provider: openrouter
     litellm_model: "openrouter/mistralai/mistral-small-3.2-24b-instruct"
     max_context_tokens: 131072
@@ -39,6 +43,8 @@ models:
 
   - id: or-gpt-oss-20b
     label: "OpenAI GPT-OSS 20B"
+    system_prompt: |
+      You are a stylistic writing partner that preserves the user's intent and voice.
     provider: openrouter
     litellm_model: "openrouter/openai/gpt-oss-20b"
     max_context_tokens: 131072
@@ -52,6 +58,8 @@ models:
 
   - id: or-tongyi-deepresearch-30b-a3b
     label: "Tongyi DeepResearch 30B A3B"
+    system_prompt: |
+      You are an exhaustive researcher that expands each idea with supporting evidence.
     provider: openrouter
     litellm_model: "openrouter/alibaba/tongyi-deepresearch-30b-a3b"
     max_context_tokens: 131072
@@ -65,6 +73,8 @@ models:
 
   - id: or-qwen3-30b-a3b
     label: "Qwen3 30B A3B"
+    system_prompt: |
+      You are a structured coding and tooling assistant with a focus on readable solutions.
     provider: openrouter
     litellm_model: "openrouter/qwen/qwen3-30b-a3b"
     max_context_tokens: 131072
@@ -93,7 +103,7 @@ models:
     label: "Qwen2.5 VL 32B Instruct"
     provider: openrouter
     litellm_model: "openrouter/qwen/qwen2.5-vl-32b-instruct"
-    max_context_tokens: 65536
+    max_context_tokens: 131072
     default_params:
       temperature: 0.25
       top_p: 0.95
@@ -106,7 +116,7 @@ models:
     label: "DeepSeek V3 0324"
     provider: openrouter
     litellm_model: "openrouter/deepseek/deepseek-chat-v3-0324"
-    max_context_tokens: 128000
+    max_context_tokens: 164000
     default_params:
       temperature: 0.15
       top_p: 0.9
@@ -115,9 +125,11 @@ models:
 
   - id: or-deepseek-v3_1
     label: "DeepSeek V3.1"
+    system_prompt: |
+      You are a calm analytical tutor who narrates intermediate reasoning steps.
     provider: openrouter
     litellm_model: "openrouter/deepseek/deepseek-chat-v3.1"
-    max_context_tokens: 128000
+    max_context_tokens: 163800
     default_params:
       temperature: 0.15
       top_p: 0.9
@@ -128,6 +140,8 @@ models:
 
   - id: or-gemma-3-27b
     label: "Gemma 3 27B"
+    system_prompt: |
+      You are an empathetic writing mentor that structures outlines cleanly.
     provider: openrouter
     litellm_model: "openrouter/google/gemma-3-27b-it"
     max_context_tokens: 128000
@@ -141,6 +155,8 @@ models:
 
   - id: or-glm-4_5-air
     label: "GLM 4.5 Air"
+    system_prompt: |
+      You are an execution planner who maps milestones, risks, and dependencies.
     provider: openrouter
     litellm_model: "openrouter/z-ai/glm-4.5-air"
     max_context_tokens: 131072
@@ -156,7 +172,7 @@ models:
     label: "DeepSeek R1T Chimera"
     provider: openrouter
     litellm_model: "openrouter/tngtech/deepseek-r1t-chimera"
-    max_context_tokens: 164000
+    max_context_tokens: 163840
     default_params:
       temperature: 0.15
       top_p: 0.9
@@ -167,7 +183,7 @@ models:
     label: "DeepSeek R1T2 Chimera"
     provider: openrouter
     litellm_model: "openrouter/tngtech/deepseek-r1t2-chimera"
-    max_context_tokens: 164000
+    max_context_tokens: 130000
     default_params:
       temperature: 0.15
       top_p: 0.9
@@ -178,6 +194,8 @@ models:
 
   - id: or-kimi-k2
     label: "Kimi K2 0711"
+    system_prompt: |
+      You are a precision summarizer tailored for executive briefs.
     provider: openrouter
     litellm_model: "openrouter/moonshotai/kimi-k2"
     max_context_tokens: 128000
@@ -191,6 +209,8 @@ models:
 
   - id: or-qwen3-235b-a22b
     label: "Qwen3 235B A22B"
+    system_prompt: |
+      You are a meticulous deep-reasoning agent comfortable with research analysis.
     provider: openrouter
     litellm_model: "openrouter/qwen/qwen3-235b-a22b"
     max_context_tokens: 131072
@@ -231,17 +251,65 @@ llm_tool:
   tool_name: "llm-complete"
   title: "LLM skill completions"
   description: "Expose a curated skill set as an MCP tool."
-  skills:
-    reason: "or-qwen3-235b-a22b"
-    summarize: "or-kimi-k2"
-    solve: "or-deepseek-v3_1"
-    write: "or-gemma-3-27b"
-    write2: "or-gpt-oss-20b"
-    plan: "or-glm-4_5-air"
-    code: "or-qwen3-30b-a3b"
-    extract_data: "or-mistral-small-3.1-24b"
   default_skill: "reason"
-  max_tokens_limit: 2048
+  max_tokens_limit: 4096
+  skills:
+    - id: reason
+      label: "Research Reasoner"
+      description: "Deep research analysis with citations."
+      model_id: or-qwen3-235b-a22b
+      prompt_id: reasoning_research
+      max_output_tokens: 4096
+      temperature: 0.3
+    - id: summarize
+      label: "Concise Summarizer"
+      description: "Executive summaries optimized for briefs."
+      model_id: or-kimi-k2
+      prompt_id: summary_compact
+      max_output_tokens: 1500
+      temperature: 0.15
+    - id: solve
+      label: "Structured Problem Solver"
+      description: "Step-by-step reasoning tutor."
+      model_id: or-deepseek-v3_1
+      prompt_id: solver_breakdown
+      max_output_tokens: 2048
+      temperature: 0.1
+    - id: write
+      label: "Outline Architect"
+      description: "Generates book/article outlines and section plans."
+      model_id: or-gemma-3-27b
+      prompt_id: outline_architect
+      max_output_tokens: 3000
+      temperature: 0.35
+    - id: write2
+      label: "Creative Voice Crafter"
+      description: "Creative drafts and voice-preserving rewrites."
+      model_id: or-gpt-oss-20b
+      prompt_id: creative_voice
+      max_output_tokens: 2200
+      temperature: 0.5
+    - id: plan
+      label: "Macro Planner"
+      description: "Creates phased execution plans."
+      model_id: or-glm-4_5-air
+      prompt_id: planner_macro
+      max_output_tokens: 2600
+      temperature: 0.2
+    - id: code
+      label: "Coding Copilot"
+      description: "Implementation sketches and refactors."
+      model_id: or-qwen3-30b-a3b
+      prompt_id: coding_helper
+      max_output_tokens: 1800
+      temperature: 0.1
+    - id: extract_data
+      label: "Extraction Specialist"
+      description: "Turns passages into structured JSON."
+      model_id: or-mistral-small-3.1-24b
+      prompt_id: extraction_specialist
+      max_output_tokens: 1600
+      temperature: 0.1
 
 mcp_servers:
   - id: arxiv
@@ -259,8 +327,22 @@ mcp_servers:
       - "srw_llm_tool.py"
       - "--config"
       - "config.yaml"
+    auto_start: true
   - id: "dre"
     command:
       - "npx"
       - "deliberate-reasoning-engine"
-
+    auto_start: true
+  - id: memory_bank_mcp
+    command:
+      - "npx"
+      - "@movibe/memory-bank-mcp"
+      - "--mode ask"
+    auto_start: true
+  - id: cyberchitta-llm-context
+    command:
+      - "uvx"
+      - "--from"
+      - "llm-context"
+      - "lc-mcp"
+    auto_start: true

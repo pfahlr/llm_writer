@@ -2,3 +2,8 @@ venv/*
 *__pycache__*
 .pytest_cache
 .env
+.cline*
+.llm-context*
+logs/*
+dre.db
+*.kate-swp

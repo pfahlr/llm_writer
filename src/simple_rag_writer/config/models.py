@@ -20,6 +20,7 @@ class ModelConfig(BaseModel):
   model_name: str
   params: Dict[str, Any] = Field(default_factory=dict)
   label: Optional[str] = None
+  system_prompt: Optional[str] = None
   tags: List[str] = Field(default_factory=list)
   max_context_tokens: Optional[int] = None
 
@@ -65,13 +66,23 @@ class McpServerConfig(BaseModel):
   auto_start: bool = True
 
 
+class SkillConfig(BaseModel):
+  id: str
+  label: str
+  description: Optional[str] = None
+  model_id: str
+  prompt_id: Optional[str] = None
+  max_output_tokens: Optional[int] = None
+  temperature: Optional[float] = None
+
+
 class LlmToolConfig(BaseModel):
   id: str = "llm"
   tool_name: str = "llm"
   title: Optional[str] = None
   description: Optional[str] = None
   default_skill: Optional[str] = None
-  skills: Dict[str, str]
+  skills: List[SkillConfig] = Field(default_factory=list)
   max_tokens_limit: Optional[int] = None
 
 

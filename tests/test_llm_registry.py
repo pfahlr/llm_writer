@@ -429,3 +429,35 @@ def test_complete_handles_bracketed_textual_tool_calls(monkeypatch):
   assert result == "final response"
   events = registry.pop_tool_events()
   assert events and "notes:search" in events[0]
+
+
+def test_complete_allows_custom_system_prompt(monkeypatch):
+  captured: Dict[str, Any] = {}
+
+  def fake_completion(*, messages, **kwargs):
+    captured["messages"] = messages
+    return SimpleNamespace(
+      choices=[SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=[]))]
+    )
+
+  monkeypatch.setattr(
+    "simple_rag_writer.llm.registry.litellm",
+    SimpleNamespace(completion=fake_completion),
+  )
+
+  cfg = AppConfig(
+    default_model="openai:gpt-4.1-mini",
+    providers={"openai": ProviderConfig(type="openai", api_key="test-key")},
+    models=[
+      ModelConfig(
+        id="openai:gpt-4.1-mini",
+        provider="openai",
+        model_name="gpt-4.1-mini",
+        system_prompt="Default Prompt",
+      )
+    ],
+  )
+  registry = ModelRegistry(cfg)
+  registry.complete("Hello", system_prompt="Skill Prompt")
+
+  assert captured["messages"][0]["content"] == "Skill Prompt"

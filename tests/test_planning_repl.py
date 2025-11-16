@@ -61,6 +61,7 @@ class _FakeModelRegistry:
     model_id: Optional[str] = None,
     task_params=None,
     mcp_client=None,
+    system_prompt: Optional[str] = None,
   ) -> str:  # pragma: no cover - exercised via tests
     self.completions.append(prompt)
     return f"assistant-{len(self.completions)}"
@@ -426,11 +427,17 @@ def test_run_loop_retries_after_llm_error(monkeypatch) -> None:
   original_complete = registry.complete
   prompts: List[str] = []
 
-  def flaky_complete(prompt, model_id=None, task_params=None, mcp_client=None):
+  def flaky_complete(prompt, model_id=None, task_params=None, mcp_client=None, system_prompt=None):
     prompts.append(prompt)
     if len(prompts) == 1:
       raise RuntimeError("bad format around MCP tool block")
-    return original_complete(prompt, model_id=model_id, task_params=task_params, mcp_client=mcp_client)
+    return original_complete(
+      prompt,
+      model_id=model_id,
+      task_params=task_params,
+      mcp_client=mcp_client,
+      system_prompt=system_prompt,
+    )
 
   registry.complete = flaky_complete  # type: ignore[assignment]
 
