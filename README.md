@@ -23,3 +23,24 @@ srw -c config.yaml plan
 The CLI requires a configuration YAML file that declares providers, models,
 and MCP settings. Use `srw -c config.yaml run path/to/tasks/*.yaml` to execute
 tasks once a config is available, or `srw replay` to inspect planning logs.
+
+## Example Config
+
+```yaml
+default_model: "openai:gpt-4.1-mini"
+providers:
+  openai:
+    type: "openai"
+    api_key_env: "OPENAI_API_KEY"
+model_defaults:
+  temperature: 0.3
+models:
+  - id: "openai:gpt-4.1-mini"
+    provider: "openai"
+    model_name: "gpt-4.1-mini"
+mcp_prompt_policy:
+  default_mode: "raw_capped"
+logging:
+  planning:
+    enabled: true
+```
