@@ -191,19 +191,27 @@ class PlanningRepl:
 
   def _run_mcp_tool(self, args: List[str]) -> None:
     if len(args) < 3:
-      console.print("[yellow]Usage: /use <server> <tool> \"query\" [limit][/yellow]")
+      console.print(
+        "[yellow]Usage: /use <server> <tool> \"query\" [limit] or key:value args[/yellow]"
+      )
       return
-    server, tool, query = args[:3]
-    limit: Optional[int] = None
-    if len(args) >= 4:
-      try:
-        limit = int(args[3])
-      except ValueError:
-        console.print("[yellow]Limit must be an integer.[/yellow]")
-        return
-    params: dict[str, object] = {"query": query}
-    if limit is not None:
-      params["limit"] = limit
+    server, tool, *param_tokens = args
+    if not param_tokens:
+      console.print(
+        "[yellow]Usage: /use <server> <tool> \"query\" [limit] or key:value args[/yellow]"
+      )
+      return
+    try:
+      params, label = self._build_tool_params(param_tokens)
+    except ValueError as exc:
+      console.print(f"[yellow]{exc}[/yellow]")
+      return
+    if not params:
+      console.print(
+        "[yellow]Usage: /use <server> <tool> \"query\" [limit] or key:value args[/yellow]"
+      )
+      return
+    label = label or " ".join(param_tokens)
     try:
       result = self._mcp_client.call_tool(server, tool, params)
     except Exception as exc:  # noqa: BLE001
@@ -217,11 +225,64 @@ class PlanningRepl:
     self._last_batch = _ResultBatch(
       source="mcp",
       items=items,
-      label=query,
+      label=label,
       server=server,
       tool=tool,
     )
     self._show_items_table(items, title=f"{server}:{tool}")
+
+  def _build_tool_params(
+    self, tokens: List[str]
+  ) -> Tuple[Optional[dict[str, object]], Optional[str]]:
+    if not tokens:
+      return None, None
+    named: dict[str, object] = {}
+    positional: List[str] = []
+    for token in tokens:
+      key, value = self._split_param_token(token)
+      if key is None:
+        positional.append(token)
+      else:
+        named[key] = self._coerce_param_value(key, value)
+    if named:
+      return named, self._derive_param_label(named)
+    if not positional:
+      return None, None
+    query = positional[0]
+    params: dict[str, object] = {"query": query}
+    if len(positional) >= 2:
+      params["limit"] = self._parse_limit(positional[1])
+    return params, query
+
+  def _split_param_token(self, token: str) -> Tuple[Optional[str], str]:
+    for delimiter in (":", "="):
+      if delimiter in token:
+        key, value = token.split(delimiter, 1)
+        key = key.strip()
+        if not key:
+          break
+        return key, value.strip()
+    return None, token
+
+  def _coerce_param_value(self, key: str, value: str) -> object:
+    if key == "limit":
+      return self._parse_limit(value)
+    return value
+
+  def _parse_limit(self, text: str) -> int:
+    try:
+      return int(text)
+    except ValueError as exc:
+      raise ValueError("Limit must be an integer.") from exc
+
+  def _derive_param_label(self, params: dict[str, object]) -> Optional[str]:
+    query_value = params.get("query")
+    if isinstance(query_value, str) and query_value.strip():
+      return query_value
+    for value in params.values():
+      if isinstance(value, str) and value.strip():
+        return value
+    return None
 
   def _fetch_url_reference(self, args: List[str]) -> None:
     if not args:

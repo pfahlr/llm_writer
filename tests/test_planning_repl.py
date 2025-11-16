@@ -209,6 +209,36 @@ def test_handle_command_use_runs_mcp_tool_and_stores_results(monkeypatch) -> Non
   assert table.row_count == len(batch.items)
 
 
+def test_handle_command_use_accepts_key_value_arguments(monkeypatch) -> None:
+  repl, _, _, fake_console = _make_repl(monkeypatch)
+
+  command = (
+    '/use notes search query:"outline ideas" '
+    'paper_id:"2511.01043" categories:"cs.AI" limit:3'
+  )
+  assert repl._handle_command(command) is False
+  batch = repl._last_batch
+  assert batch is not None
+  assert batch.server == "notes"
+  assert batch.tool == "search"
+  assert batch.label == "outline ideas"
+  assert repl._mcp_client.calls == [
+    (
+      "notes",
+      "search",
+      {
+        "query": "outline ideas",
+        "paper_id": "2511.01043",
+        "categories": "cs.AI",
+        "limit": 3,
+      },
+    )
+  ]
+  table = fake_console.printed[-1]
+  assert isinstance(table, Table)
+  assert table.row_count == len(batch.items)
+
+
 def test_handle_command_url_fetches_and_sets_batch(monkeypatch) -> None:
   repl, _, _, fake_console = _make_repl(monkeypatch)
   monkeypatch.setattr(repl_module, "fetch_url_text", lambda url: "URL body text for " + url)

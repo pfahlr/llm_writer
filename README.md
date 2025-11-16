@@ -127,6 +127,8 @@ builds prompts with optional MCP context. Slash commands include:
   - `/sources`: show configured MCP servers plus discovered tool names and
     descriptions.
   - `/use <server> <tool> "query" [limit]`: call an MCP tool and display results.
+    You can also provide key/value args like `query:"text" paper_id:"1234"` to
+    pass multiple parameters to the tool.
   - `/inject <indices>`: inject selected MCP items into the internal context
     buffer.
   - `/context`: preview the accumulated MCP context that will be prepended to
