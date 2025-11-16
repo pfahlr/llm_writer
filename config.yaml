@@ -234,6 +234,12 @@ llm_tool:
   skills:
     reason: "or-qwen3-235b-a22b"
     summarize: "or-kimi-k2"
+    solve: "or-deepseek-v3_1"
+    write: "or-gemma-3-27b"
+    write2: "or-gpt-oss-20b"
+    plan: "or-glm-4_5-air"
+    code: "or-qwen3-30b-a3b"
+    extract_data: "or-mistral-small-3.1-24b"
   default_skill: "reason"
   max_tokens_limit: 2048
 
