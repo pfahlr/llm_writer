@@ -3,15 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import shlex
 from functools import partial
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from simple_rag_writer.config.models import AppConfig
-from simple_rag_writer.llm.registry import ModelRegistry
 from simple_rag_writer.llm.executor import LlmCompletionError, run_completion_with_feedback
+from simple_rag_writer.llm.registry import ModelRegistry
 from simple_rag_writer.logging.planning_log import McpLogItem, PlanningLogWriter
 from simple_rag_writer.mcp.client import McpClient
 from simple_rag_writer.mcp.normalization import normalize_payload
@@ -26,6 +26,7 @@ from simple_rag_writer.tasks.models import UrlReference
 console = Console()
 HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
 MAX_LLM_COMPLETION_ATTEMPTS = 2
+MCP_QUERY_HISTORY_LIMIT = 5
 
 
 @dataclass
@@ -55,6 +56,7 @@ class PlanningRepl:
     self._context_chunks: List[str] = []
     self._pending_log_items: List[McpLogItem] = []
     self._last_batch: Optional[_ResultBatch] = None
+    self._mcp_query_history: List[str] = []
     self._turn_index = 0
 
   def run(self) -> None:
@@ -88,7 +90,14 @@ class PlanningRepl:
 
       window = max(HISTORY_WINDOW, 0)
       history_slice = self._history[-window:] if window else []
-      prompt = build_planning_prompt(history_slice, line, self._mcp_context)
+      prompt = build_planning_prompt(
+        history_slice,
+        line,
+        self._mcp_context,
+        mcp_query_history=self._mcp_query_history[-MCP_QUERY_HISTORY_LIMIT :]
+        if self._mcp_query_history
+        else None,
+      )
       try:
         output = run_completion_with_feedback(
           self._registry,
@@ -251,6 +260,7 @@ class PlanningRepl:
       console.print("[yellow]No results returned.[/yellow]")
       self._last_batch = None
       return
+    self._record_mcp_query(server, tool, params)
     self._last_batch = _ResultBatch(
       source="mcp",
       items=items,
@@ -364,7 +374,10 @@ class PlanningRepl:
     if not selected:
       console.print("[yellow]No matching items for the given indices.[/yellow]")
       return
-    chunk = self._format_context_chunk(self._last_batch, selected)
+    chunk_label = self._context_chunk_label(self._last_batch)
+    chunk = self._format_context_chunk(
+      self._last_batch, selected, label_override=chunk_label
+    )
     if not chunk:
       console.print("[yellow]No text extracted from the selected items.[/yellow]")
       return
@@ -400,8 +413,19 @@ class PlanningRepl:
         deduped.append(idx)
     return deduped
 
-  def _format_context_chunk(self, batch: _ResultBatch, items: List[NormalizedItem]) -> str:
-    label = batch.label or batch.url or (f"{batch.server}:{batch.tool}".strip(":"))
+  def _format_context_chunk(
+    self,
+    batch: _ResultBatch,
+    items: List[NormalizedItem],
+    *,
+    label_override: Optional[str] = None,
+  ) -> str:
+    label = (
+      label_override
+      or batch.label
+      or batch.url
+      or (f"{batch.server}:{batch.tool}".strip(":"))
+    )
     header = f"### {label}" if label else None
     blocks: List[str] = []
     if header:
@@ -451,6 +475,28 @@ class PlanningRepl:
         item.url or "",
       )
     console.print(table)
+
+  def _context_chunk_label(self, batch: Optional[_ResultBatch]) -> Optional[str]:
+    if not batch:
+      return None
+    if batch.server and batch.tool:
+      return f"{batch.server}:{batch.tool}"
+    return batch.label
+
+  def _record_mcp_query(self, server: str, tool: str, params: Dict[str, object]) -> None:
+    summary = self._format_query_summary(server, tool, params)
+    self._mcp_query_history.append(summary)
+    if len(self._mcp_query_history) > MCP_QUERY_HISTORY_LIMIT:
+      self._mcp_query_history.pop(0)
+
+  @staticmethod
+  def _format_query_summary(server: str, tool: str, params: Dict[str, object]) -> str:
+    entries = []
+    for key in sorted(params.keys()):
+      value = params[key]
+      entries.append(f"{key}={value}")
+    param_text = f" ({', '.join(entries)})" if entries else ""
+    return f"{server}/{tool}{param_text}"
 
   def _format_snippet(self, item: NormalizedItem) -> str:
     text = (item.snippet or item.body or "").strip()

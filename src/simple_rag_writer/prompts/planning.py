@@ -9,6 +9,8 @@ def build_planning_prompt(
   history: List[Tuple[str, str]],
   user_message: str,
   mcp_context: Optional[str] = None,
+  *,
+  mcp_query_history: Optional[List[str]] = None,
   history_window: int = DEFAULT_HISTORY_WINDOW,
 ) -> str:
   """Build planning prompt from optional MCP context, recent history, and new user text."""
@@ -44,6 +46,11 @@ def build_planning_prompt(
   else:
     parts.append("")
     parts.append("No previous conversation yet.")
+
+  if mcp_query_history:
+    parts.extend(["", "## Recent MCP calls"])
+    for entry in mcp_query_history:
+      parts.append(f"- {entry}")
 
   parts.extend(
     [

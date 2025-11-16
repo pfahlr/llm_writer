@@ -48,6 +48,7 @@ def reconstruct_prompt_for_turn(log_path: Path, turn_index: int) -> Tuple[str, R
     target.user_text,
     mcp_context,
     history_window=DEFAULT_HISTORY_WINDOW,
+    mcp_query_history=None,
   )
   meta = ReplayMeta(
     turn_index=turn_index,

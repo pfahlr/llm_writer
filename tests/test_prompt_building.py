@@ -30,6 +30,22 @@ def test_planning_prompt_includes_sections_and_limits_history() -> None:
     assert f"Assistant: assistant {i}" in prompt
 
 
+def test_planning_prompt_includes_mcp_query_history() -> None:
+  prompt = build_planning_prompt(
+    history=[],
+    user_message="Need an MCP-aware plan.",
+    mcp_context=None,
+    mcp_query_history=[
+      "notes/search (query=outline ideas, limit=2)",
+      "arxiv/list (query=LLM education)",
+    ],
+  )
+
+  assert "## Recent MCP calls" in prompt
+  assert "- notes/search (query=outline ideas, limit=2)" in prompt
+  assert "- arxiv/list (query=LLM education)" in prompt
+
+
 def test_task_prompt_includes_outline_style_and_references() -> None:
   task = TaskSpec(
     title="Write section on evaluation methods",

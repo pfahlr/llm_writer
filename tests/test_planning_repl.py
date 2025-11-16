@@ -14,7 +14,7 @@ from simple_rag_writer.config.models import (
 )
 from simple_rag_writer.mcp.types import McpToolResult
 from simple_rag_writer.planning import repl as repl_module
-from simple_rag_writer.planning.repl import PlanningRepl
+from simple_rag_writer.planning.repl import MCP_QUERY_HISTORY_LIMIT, PlanningRepl
 
 
 def _make_config(
@@ -283,6 +283,8 @@ def test_run_loop_logs_turns_and_uses_history_window(monkeypatch) -> None:
     history: List[Tuple[str, str]],
     user_message: str,
     mcp_context: Optional[str],
+    *,
+    mcp_query_history: Optional[List[str]] = None,
     history_window: int = 5,
   ) -> str:
     prompt_calls.append((list(history), user_message, mcp_context))
@@ -351,6 +353,8 @@ def test_run_loop_injects_context_and_logs(monkeypatch) -> None:
     history: List[Tuple[str, str]],
     user_message: str,
     mcp_context: Optional[str],
+    *,
+    mcp_query_history: Optional[List[str]] = None,
     history_window: int = 5,
   ) -> str:
     prompt_calls.append((list(history), user_message, mcp_context))
@@ -367,6 +371,42 @@ def test_run_loop_injects_context_and_logs(monkeypatch) -> None:
   assert "Alpha body" in prompt_calls[-1][2]
 
 
+def test_injected_context_chunk_uses_server_tool_label(monkeypatch) -> None:
+  repl, _, _, _ = _make_repl(monkeypatch)
+
+  repl._run_mcp_tool(['notes', 'search', '"outline ideas"', '2'])
+  repl._inject_results(["1"])
+
+  chunk = repl._context_chunks[-1]
+  assert chunk.startswith("### notes:search")
+  assert "outline ideas" not in chunk
+
+
+def test_mcp_query_history_passed_to_prompt(monkeypatch) -> None:
+  repl, _, _, _ = _make_repl(monkeypatch, console_inputs=["Plan it", "/quit"])
+  repl._run_mcp_tool(['notes', 'search', '"outline ideas"', '2'])
+
+  captured: List[Optional[List[str]]] = []
+
+  def fake_prompt_builder(
+    history: List[Tuple[str, str]],
+    user_message: str,
+    mcp_context: Optional[str],
+    *,
+    mcp_query_history: Optional[List[str]] = None,
+    history_window: int = 5,
+  ) -> str:
+    captured.append(mcp_query_history)
+    return "prompted"
+
+  monkeypatch.setattr(repl_module, "build_planning_prompt", fake_prompt_builder)
+
+  repl.run()
+
+  assert captured
+  assert captured[-1] == repl._mcp_query_history[-MCP_QUERY_HISTORY_LIMIT :]
+
+
 def test_run_loop_retries_after_llm_error(monkeypatch) -> None:
   repl, registry, log_writer, fake_console = _make_repl(
     monkeypatch,
@@ -380,7 +420,7 @@ def test_run_loop_retries_after_llm_error(monkeypatch) -> None:
   monkeypatch.setattr(
     repl_module,
     "build_planning_prompt",
-    lambda history, user, ctx, history_window=5: base_prompt,
+    lambda history, user, ctx, *, mcp_query_history=None, history_window=5: base_prompt,
   )
 
   original_complete = registry.complete
@@ -423,7 +463,7 @@ def test_run_loop_recovers_from_llm_errors(monkeypatch) -> None:
   monkeypatch.setattr(
     repl_module,
     "build_planning_prompt",
-    lambda history, user, ctx, history_window=5: "prompt-error",
+    lambda history, user, ctx, *, mcp_query_history=None, history_window=5: "prompt-error",
   )
 
   repl.run()
