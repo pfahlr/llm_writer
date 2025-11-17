@@ -1,0 +1,227 @@
+id: 15
+filename: 15_fix_planning_mode_silent_failures.yaml
+title: Fix planning mode silent failures and improve error reporting
+priority: critical
+description: >
+  Address the issue where planning mode stops responding after a few iterations
+  with no output or error message. This is a critical usability issue that makes
+  the tool unreliable in interactive use.
+
+problem_analysis:
+  symptoms:
+    - Planning REPL exchanges messages for a few turns
+    - Suddenly stops producing output
+    - No error message displayed to user
+    - Process appears to hang or complete silently
+
+  root_causes:
+    - Tool iteration limit reached without user feedback (registry.py:133-134)
+    - MCP tool errors swallowed silently in some code paths
+    - litellm BadRequestError fallback disables function calling silently (registry.py:121-126)
+    - No timeout on MCP tool calls leading to indefinite hangs
+    - Empty or whitespace-only LLM responses treated as success
+    - Exception handling in run_completion_with_feedback catches all exceptions (executor.py:55)
+
+  code_locations:
+    - src/simple_rag_writer/llm/registry.py:111-157 (tool iteration loop)
+    - src/simple_rag_writer/llm/registry.py:133-134 (silent max iteration failure)
+    - src/simple_rag_writer/llm/executor.py:55-62 (generic exception catching)
+    - src/simple_rag_writer/planning/repl.py:113-129 (error display in REPL)
+    - src/simple_rag_writer/mcp/client.py (no timeout handling)
+
+dependencies:
+  - 09 (Planning REPL)
+  - 03 (Model Registry)
+  - 06 (MCP Client)
+
+goals:
+  - User always receives clear feedback when LLM calls fail
+  - Tool iteration limits provide helpful guidance instead of cryptic errors
+  - MCP timeouts are configurable and don't cause silent hangs
+  - Function calling fallbacks are logged visibly
+  - Empty responses are detected and reported
+  - Planning session debugging is easier with verbose mode
+
+changes:
+  - id: improve_tool_iteration_feedback
+    description: >
+      When max tool iterations is reached, provide actionable feedback to the
+      user explaining what happened and suggesting remediation.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "line 133-134"
+            before: |
+              if attempt >= max_tool_iterations:
+                raise RuntimeError("LLM requested too many MCP tool calls.")
+            after: |
+              if attempt >= max_tool_iterations:
+                raise RuntimeError(
+                  f"LLM exceeded maximum tool iterations ({max_tool_iterations}). "
+                  f"The model may be stuck in a loop trying to call: {server_id}:{tool_name}. "
+                  f"Try rephrasing your request or switching models."
+                )
+          - location: "line 154-156"
+            before: |
+              if attempt >= max_tool_iterations:
+                raise RuntimeError("LLM requested too many MCP tool calls.")
+            after: |
+              if attempt >= max_tool_iterations:
+                raise RuntimeError(
+                  f"LLM exceeded maximum tool iterations ({max_tool_iterations}) using textual tool calls. "
+                  f"Last tool requested: {server_id}:{tool_name}. "
+                  f"The model may not support your current MCP server or query. Try simplifying your request."
+                )
+
+  - id: log_function_calling_fallback
+    description: >
+      When function calling is disabled due to BadRequestError, notify the user
+      so they understand the model switched to textual tool mode.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "line 121-126"
+            before: |
+              if supports_functions and isinstance(exc, getattr(litellm, "BadRequestError", Exception)):
+                self._provider_supports_functions[provider.type] = False
+                supports_functions = False
+                tools_payload = None
+                continue
+            after: |
+              if supports_functions and isinstance(exc, getattr(litellm, "BadRequestError", Exception)):
+                import sys
+                print(
+                  f"[Warning] Model {model.model_name} does not support function calling. "
+                  f"Falling back to textual tool mode.",
+                  file=sys.stderr,
+                )
+                self._provider_supports_functions[provider.type] = False
+                supports_functions = False
+                tools_payload = None
+                continue
+
+  - id: detect_empty_responses
+    description: >
+      Detect when LLM returns empty or whitespace-only responses and raise
+      an error instead of returning nothing silently.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "line 157"
+            before: |
+              return text_output
+            after: |
+              if not text_output or not text_output.strip():
+                raise RuntimeError(
+                  "LLM returned empty response. This may indicate:\n"
+                  "  - Model output was filtered by content policy\n"
+                  "  - Request exceeded context length\n"
+                  "  - Model encountered an internal error\n"
+                  "Try rephrasing your request or using a different model."
+                )
+              return text_output
+
+  - id: add_mcp_timeout_config
+    description: >
+      Add configurable timeout for MCP tool calls to prevent indefinite hangs.
+    files:
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - location: "McpServerConfig class"
+            add_fields: |
+              timeout: Optional[int] = 30  # seconds, None for no timeout
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - description: "Implement timeout in call_tool using anyio.move_on_after or asyncio.wait_for"
+            location: "call_tool method"
+            implementation: |
+              # Use anyio.move_on_after(timeout) or asyncio.wait_for to enforce timeout
+              # Raise McpToolError with timeout message if exceeded
+
+  - id: add_verbose_mode_config
+    description: >
+      Add optional verbose/debug mode flag to config that enables detailed
+      logging of LLM calls, tool invocations, and errors.
+    files:
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - location: "AppConfig class"
+            add_fields: |
+              debug_mode: bool = False
+              verbose_llm_calls: bool = False
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - description: "Add conditional debug logging throughout complete() method"
+            note: |
+              When config.verbose_llm_calls is True, print:
+              - Full messages being sent to LLM
+              - Tool calls and parameters
+              - Tool results (truncated)
+              - Retry attempts
+              Use rich.print with [dim] style to differentiate from normal output
+
+  - id: improve_repl_error_context
+    description: >
+      Enhance REPL error display to show more context about what failed.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "line 124-129"
+            before: |
+              except LlmCompletionError as exc:
+                message = exc.message
+                error_text = f"LLM call failed: {message}"
+                console.print(f"[red]{error_text}[/red]")
+                self._log.end_turn(self._turn_index, error_text)
+                continue
+            after: |
+              except LlmCompletionError as exc:
+                message = exc.message
+                context_info = [
+                  f"[red bold]LLM Call Failed[/red bold]",
+                  f"Model: {self._registry.current_id}",
+                  f"Turn: {self._turn_index}",
+                  f"Error: {message}",
+                ]
+                if self._mcp_context:
+                  context_info.append(f"Context active: {len(self._context_chunks)} chunk(s)")
+                if self._mcp_query_history:
+                  context_info.append(f"Recent MCP queries: {len(self._mcp_query_history)}")
+                console.print(Panel("\n".join(context_info), border_style="red"))
+                error_text = f"LLM call failed: {message}"
+                self._log.end_turn(self._turn_index, error_text)
+                continue
+
+artifacts:
+  - src/simple_rag_writer/llm/registry.py
+  - src/simple_rag_writer/llm/executor.py
+  - src/simple_rag_writer/planning/repl.py
+  - src/simple_rag_writer/mcp/client.py
+  - src/simple_rag_writer/config/models.py
+
+testing:
+  manual:
+    - Test planning mode with a model that doesn't support function calling
+    - Test with MCP queries that trigger multiple tool iterations
+    - Test with queries that produce empty responses
+    - Verify timeout behavior with slow/hanging MCP servers
+    - Enable verbose mode and verify detailed logging appears
+
+  automated:
+    - Add test for empty response detection
+    - Add test for max iteration error message quality
+    - Add test for MCP timeout handling
+    - Mock slow MCP server and verify timeout
+    - Test verbose logging output capture
+
+success_criteria:
+  - Planning mode never silently fails or hangs
+  - All error messages provide actionable next steps
+  - Users can enable debug mode for troubleshooting
+  - MCP timeouts prevent indefinite hangs
+  - Tool iteration limits explain what went wrong
+
+notes: >
+  This is a critical reliability fix. The planning mode is the primary interactive
+  interface and must provide clear feedback at all times. Users should never be
+  left wondering why the system stopped responding.

@@ -1,0 +1,539 @@
+id: 21
+filename: 21_comprehensive_logging_and_debugging.yaml
+title: Add comprehensive logging and debugging infrastructure
+priority: medium
+description: >
+  Implement structured logging throughout the application with multiple verbosity
+  levels, debug modes, and diagnostic tools to enable effective troubleshooting
+  in development and production.
+
+problem_analysis:
+  current_state:
+    - No centralized logging configuration
+    - litellm debug mode enabled globally via script (srw wrapper)
+    - No structured logging (JSON, contextual fields)
+    - Console output mixes user-facing text with debug info
+    - No log rotation or persistence (except planning logs)
+    - Cannot selectively enable debug logging per module
+
+  debug_challenges:
+    - Hard to diagnose MCP connection issues
+    - LLM prompt/response pairs not logged
+    - Token usage not tracked over time
+    - Cannot reproduce issues without manual note-taking
+    - No performance/timing metrics
+    - Error stack traces not captured systematically
+
+dependencies:
+  - All existing tasks (logging should cover all components)
+
+goals:
+  - Structured logging with levels (DEBUG, INFO, WARNING, ERROR)
+  - Separate user-facing output from debug logs
+  - Optional log files with rotation
+  - Per-module log level control
+  - Rich diagnostic commands in planning REPL
+  - Performance timing for slow operations
+  - Token usage tracking and reporting
+
+design_principles:
+  separation_of_concerns:
+    user_output: "Rich console output for user interaction"
+    debug_logs: "Structured logs to file for debugging"
+    audit_logs: "Permanent records of LLM calls, token usage"
+
+  log_levels:
+    DEBUG: "Detailed function calls, parameters, intermediate values"
+    INFO: "High-level operation starts/completions"
+    WARNING: "Recoverable errors, fallbacks, deprecated features"
+    ERROR: "Unrecoverable errors requiring user intervention"
+
+  structured_fields:
+    - timestamp (ISO 8601)
+    - level
+    - module
+    - function
+    - message
+    - contextual data (model_id, server_id, task_id, etc.)
+
+changes:
+  - id: add_logging_configuration
+    description: >
+      Add centralized logging configuration with file output.
+    files:
+      - path: src/simple_rag_writer/logging/config.py
+        op: create
+        content: |
+          from __future__ import annotations
+          import logging
+          import logging.handlers
+          from pathlib import Path
+          from typing import Optional
+
+
+          def setup_logging(
+            log_dir: Optional[Path] = None,
+            level: str = "INFO",
+            enable_file_logging: bool = True,
+            enable_console_logging: bool = False,  # Console reserved for user output
+          ) -> None:
+            """
+            Configure application logging.
+
+            Args:
+              log_dir: Directory for log files (default: logs/)
+              level: Logging level (DEBUG, INFO, WARNING, ERROR)
+              enable_file_logging: Write logs to rotating file
+              enable_console_logging: Also write logs to stderr (not recommended)
+            """
+            root_logger = logging.getLogger("simple_rag_writer")
+            root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+            # Clear existing handlers
+            root_logger.handlers.clear()
+
+            # File handler with rotation
+            if enable_file_logging:
+              log_dir = log_dir or Path("logs")
+              log_dir.mkdir(parents=True, exist_ok=True)
+              log_file = log_dir / "srw_debug.log"
+
+              file_handler = logging.handlers.RotatingFileHandler(
+                log_file,
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=5,
+              )
+              file_handler.setLevel(logging.DEBUG)
+              file_formatter = logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+              )
+              file_handler.setFormatter(file_formatter)
+              root_logger.addHandler(file_handler)
+
+            # Console handler (stderr, not stdout which is for user output)
+            if enable_console_logging:
+              import sys
+              console_handler = logging.StreamHandler(sys.stderr)
+              console_handler.setLevel(logging.WARNING)  # Only warnings/errors to console
+              console_formatter = logging.Formatter(
+                "[%(levelname)s] %(message)s"
+              )
+              console_handler.setFormatter(console_formatter)
+              root_logger.addHandler(console_handler)
+
+            # Prevent propagation to root logger
+            root_logger.propagate = False
+
+            # Configure litellm logging
+            litellm_logger = logging.getLogger("litellm")
+            litellm_logger.setLevel(logging.WARNING)  # Reduce litellm noise
+
+
+          def get_logger(name: str) -> logging.Logger:
+            """Get logger for a module."""
+            return logging.getLogger(f"simple_rag_writer.{name}")
+
+      - path: src/simple_rag_writer/cli/main.py
+        changes:
+          - location: "After config loading, before mode dispatch"
+            add_setup: |
+              from simple_rag_writer.logging.config import setup_logging
+
+              # Configure logging based on config
+              log_level = "DEBUG" if config.debug_mode else "INFO"
+              setup_logging(
+                log_dir=Path("logs"),
+                level=log_level,
+                enable_file_logging=True,
+                enable_console_logging=False,  # Use Rich for user output
+              )
+
+  - id: add_logging_throughout_codebase
+    description: >
+      Add structured logging calls in key locations.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "Top of file"
+            add_import: |
+              from simple_rag_writer.logging.config import get_logger
+              logger = get_logger("llm.registry")
+
+          - location: "complete() method start"
+            add_logging: |
+              logger.info(
+                "Starting LLM completion: model=%s, prompt_length=%d, has_mcp=%s",
+                model.id, len(prompt), mcp_client is not None
+              )
+
+          - location: "Tool call execution"
+            add_logging: |
+              logger.debug(
+                "Calling MCP tool: server=%s, tool=%s, params=%s, attempt=%d/%d",
+                server_id, tool_name, params, attempt + 1, max_tool_iterations
+              )
+
+          - location: "After successful completion"
+            add_logging: |
+              logger.info(
+                "LLM completion success: model=%s, output_length=%d, tool_calls=%d",
+                model.id, len(text_output), attempt
+              )
+
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "Top of file"
+            add_import: |
+              from simple_rag_writer.logging.config import get_logger
+              logger = get_logger("mcp.client")
+
+          - location: "call_tool method"
+            add_logging: |
+              logger.debug(
+                "MCP tool call: server=%s, tool=%s, params=%s",
+                server_id, tool_name, params
+              )
+
+              # After successful call
+              logger.info(
+                "MCP tool success: server=%s, tool=%s, result_size=%d",
+                server_id, tool_name, len(str(result.payload))
+              )
+
+          - location: "Error handling"
+            add_logging: |
+              logger.error(
+                "MCP tool failed: server=%s, tool=%s, error=%s",
+                server_id, tool_name, exc,
+                exc_info=True  # Include stack trace
+              )
+
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "Top of file"
+            add_import: |
+              from simple_rag_writer.logging.config import get_logger
+              logger = get_logger("planning.repl")
+
+          - location: "run() method start"
+            add_logging: |
+              logger.info("Starting planning REPL session: model=%s", self._registry.current_id)
+
+          - location: "Each command execution"
+            add_logging: |
+              logger.debug("Processing command: %s", cmd)
+
+          - location: "Turn completion"
+            add_logging: |
+              logger.info(
+                "Turn %d complete: input_len=%d, output_len=%d",
+                self._turn_index, len(line), len(output)
+              )
+
+  - id: add_token_usage_tracking
+    description: >
+      Track and log token usage across all LLM calls.
+    files:
+      - path: src/simple_rag_writer/llm/token_tracker.py
+        op: create
+        content: |
+          from __future__ import annotations
+          from dataclasses import dataclass, field
+          from datetime import datetime
+          from typing import Dict, List, Optional
+
+
+          @dataclass
+          class TokenUsageRecord:
+            """Single LLM call token usage."""
+            timestamp: datetime
+            model_id: str
+            prompt_tokens: int
+            completion_tokens: int
+            total_tokens: int
+            cost_estimate_usd: Optional[float] = None
+
+
+          class TokenUsageTracker:
+            """
+            Tracks cumulative token usage across LLM calls.
+            """
+            def __init__(self) -> None:
+              self._records: List[TokenUsageRecord] = []
+              self._cost_per_1k_tokens: Dict[str, tuple[float, float]] = {
+                # (prompt_cost, completion_cost) per 1k tokens
+                "gpt-4.1-mini": (0.00015, 0.0006),
+                "gpt-4o": (0.005, 0.015),
+                "claude-sonnet": (0.003, 0.015),
+                # Add more models as needed
+              }
+
+            def record_usage(
+              self,
+              model_id: str,
+              prompt_tokens: int,
+              completion_tokens: int,
+            ) -> None:
+              """Record token usage from an LLM call."""
+              total = prompt_tokens + completion_tokens
+              cost = self._estimate_cost(model_id, prompt_tokens, completion_tokens)
+
+              record = TokenUsageRecord(
+                timestamp=datetime.utcnow(),
+                model_id=model_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total,
+                cost_estimate_usd=cost,
+              )
+              self._records.append(record)
+
+            def _estimate_cost(
+              self, model_id: str, prompt_tokens: int, completion_tokens: int
+            ) -> Optional[float]:
+              """Estimate cost in USD based on model pricing."""
+              # Extract base model name (e.g., "openai:gpt-4.1-mini" -> "gpt-4.1-mini")
+              model_key = model_id.split(":")[-1]
+              prices = self._cost_per_1k_tokens.get(model_key)
+              if not prices:
+                return None
+
+              prompt_cost, completion_cost = prices
+              total_cost = (
+                (prompt_tokens / 1000) * prompt_cost
+                + (completion_tokens / 1000) * completion_cost
+              )
+              return total_cost
+
+            def get_session_summary(self) -> Dict[str, any]:
+              """Get summary statistics for current session."""
+              if not self._records:
+                return {"total_calls": 0}
+
+              total_prompt = sum(r.prompt_tokens for r in self._records)
+              total_completion = sum(r.completion_tokens for r in self._records)
+              total_tokens = sum(r.total_tokens for r in self._records)
+              total_cost = sum(
+                r.cost_estimate_usd for r in self._records if r.cost_estimate_usd
+              )
+
+              return {
+                "total_calls": len(self._records),
+                "total_prompt_tokens": total_prompt,
+                "total_completion_tokens": total_completion,
+                "total_tokens": total_tokens,
+                "estimated_cost_usd": total_cost,
+                "by_model": self._group_by_model(),
+              }
+
+            def _group_by_model(self) -> Dict[str, Dict]:
+              """Group usage statistics by model."""
+              by_model: Dict[str, List[TokenUsageRecord]] = {}
+              for record in self._records:
+                by_model.setdefault(record.model_id, []).append(record)
+
+              summary = {}
+              for model_id, records in by_model.items():
+                summary[model_id] = {
+                  "calls": len(records),
+                  "tokens": sum(r.total_tokens for r in records),
+                  "cost": sum(r.cost_estimate_usd or 0 for r in records),
+                }
+
+              return summary
+
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "Class initialization"
+            add: |
+              from .token_tracker import TokenUsageTracker
+              self._token_tracker = TokenUsageTracker()
+
+          - location: "After each LLM response"
+            add_tracking: |
+              # Extract token usage from response
+              usage = getattr(response, 'usage', None)
+              if usage:
+                prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+                completion_tokens = getattr(usage, 'completion_tokens', 0)
+                self._token_tracker.record_usage(model.id, prompt_tokens, completion_tokens)
+                logger.debug(
+                  "Token usage: model=%s, prompt=%d, completion=%d, total=%d",
+                  model.id, prompt_tokens, completion_tokens,
+                  prompt_tokens + completion_tokens
+                )
+
+          - location: "New method get_token_usage_summary"
+            content: |
+              def get_token_usage_summary(self) -> Dict[str, any]:
+                """Get token usage summary for current session."""
+                return self._token_tracker.get_session_summary()
+
+  - id: add_diagnostic_commands
+    description: >
+      Add debugging commands to planning REPL.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "_handle_command method"
+            add_commands: |
+              if cmd == "/debug":
+                self._show_debug_info()
+                return False
+
+              if cmd == "/tokens":
+                self._show_token_usage()
+                return False
+
+              if cmd == "/logs":
+                self._show_recent_logs(args)
+                return False
+
+          - location: "New method _show_debug_info"
+            content: |
+              def _show_debug_info(self) -> None:
+                """Display debugging information about current session."""
+                info_parts = [
+                  f"[bold]Session Debug Info[/bold]",
+                  f"Model: {self._registry.current_id}",
+                  f"Turn: {self._turn_index}",
+                  f"History size: {len(self._history)} turns",
+                  f"Context chunks: {len(self._context_chunks)}",
+                  f"Context size: {len(self._mcp_context or '')} chars",
+                  f"MCP query history: {len(self._mcp_query_history)}",
+                  f"Memory entries: {len(self._memory_store.list_entries())}",
+                  f"Pending log items: {len(self._pending_log_items)}",
+                ]
+
+                # Add system prompt info
+                if self._selected_system_prompt:
+                  info_parts.append(f"Custom prompt: {self._selected_prompt_id}")
+                else:
+                  info_parts.append("System prompt: model default")
+
+                console.print(Panel("\n".join(info_parts), title="Debug Info"))
+
+          - location: "New method _show_token_usage"
+            content: |
+              def _show_token_usage(self) -> None:
+                """Display token usage statistics."""
+                summary = self._registry.get_token_usage_summary()
+
+                if summary["total_calls"] == 0:
+                  console.print("[yellow]No LLM calls yet in this session.[/yellow]")
+                  return
+
+                table = Table(title="Token Usage Summary")
+                table.add_column("Metric", style="cyan")
+                table.add_column("Value", justify="right")
+
+                table.add_row("Total calls", str(summary["total_calls"]))
+                table.add_row("Prompt tokens", f"{summary['total_prompt_tokens']:,}")
+                table.add_row("Completion tokens", f"{summary['total_completion_tokens']:,}")
+                table.add_row("Total tokens", f"{summary['total_tokens']:,}")
+
+                cost = summary.get("estimated_cost_usd", 0)
+                if cost:
+                  table.add_row("Est. cost (USD)", f"${cost:.4f}")
+
+                console.print(table)
+
+                # Per-model breakdown
+                if summary.get("by_model"):
+                  console.print("\n[bold]By Model:[/bold]")
+                  for model_id, stats in summary["by_model"].items():
+                    console.print(
+                      f"  {model_id}: {stats['calls']} calls, "
+                      f"{stats['tokens']:,} tokens, "
+                      f"${stats['cost']:.4f}"
+                    )
+
+          - location: "New method _show_recent_logs"
+            content: |
+              def _show_recent_logs(self, args: List[str]) -> None:
+                """Show recent log file entries."""
+                num_lines = 20
+                if args:
+                  try:
+                    num_lines = int(args[0])
+                  except ValueError:
+                    pass
+
+                log_file = Path("logs/srw_debug.log")
+                if not log_file.exists():
+                  console.print("[yellow]No debug log file found.[/yellow]")
+                  return
+
+                try:
+                  with log_file.open("r") as f:
+                    lines = f.readlines()
+                    recent = lines[-num_lines:]
+                    console.print(f"[dim]Last {len(recent)} log entries:[/dim]")
+                    for line in recent:
+                      console.print(line.rstrip())
+                except Exception as exc:  # noqa: BLE001
+                  console.print(f"[red]Failed to read log file: {exc}[/red]")
+
+  - id: add_performance_timing
+    description: >
+      Add timing metrics for slow operations.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "complete() method"
+            wrap_with_timing: |
+              import time
+              start_time = time.time()
+
+              # ... existing completion logic ...
+
+              elapsed = time.time() - start_time
+              logger.info(
+                "Completion took %.2fs: model=%s, tool_iterations=%d",
+                elapsed, model.id, attempt
+              )
+
+              if elapsed > 10.0:
+                logger.warning(
+                  "Slow completion detected: %.2fs for model=%s",
+                  elapsed, model.id
+                )
+
+artifacts:
+  - src/simple_rag_writer/logging/config.py (new)
+  - src/simple_rag_writer/llm/token_tracker.py (new)
+  - src/simple_rag_writer/llm/registry.py (modified)
+  - src/simple_rag_writer/mcp/client.py (modified)
+  - src/simple_rag_writer/planning/repl.py (modified)
+  - logs/srw_debug.log (generated at runtime)
+
+testing:
+  unit_tests:
+    - Test token usage tracking calculations
+    - Test cost estimation for known models
+    - Test log configuration and handlers
+
+  integration_tests:
+    - Verify logs written to file
+    - Verify log rotation works
+    - Test /debug, /tokens, /logs commands
+
+  manual_tests:
+    - Run planning session and check log file
+    - Verify token usage matches actual calls
+    - Test log file rotation (generate > 10MB)
+
+success_criteria:
+  - All major operations logged with appropriate level
+  - Debug logs written to rotating file
+  - Token usage tracked and displayable
+  - Diagnostic commands work in planning mode
+  - Performance timing logged for slow operations
+  - User output not polluted with debug info
+
+notes: >
+  Comprehensive logging is essential for production debugging. The separation
+  between user-facing Rich output (console) and structured debug logs (file)
+  ensures a clean user experience while maintaining deep observability for
+  troubleshooting.
