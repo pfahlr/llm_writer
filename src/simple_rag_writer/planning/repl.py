@@ -31,6 +31,10 @@ MAX_LLM_COMPLETION_ATTEMPTS = 2
 MCP_QUERY_HISTORY_LIMIT = 5
 MAX_MEMORY_SNAPSHOT_CHARS = 4000
 
+# Display formatting constants
+MEMORY_SNIPPET_PREVIEW_LENGTH = 80
+TABLE_TEXT_PREVIEW_LENGTH = 96
+
 
 @dataclass
 class _ResultBatch:
@@ -350,7 +354,7 @@ class PlanningRepl:
     table.add_column("Snippet")
     for entry in entries:
       snippet = entry.text.replace("\n", " ").strip()
-      snippet = snippet[:80] + ("…" if len(snippet) > 80 else "")
+      snippet = snippet[:MEMORY_SNIPPET_PREVIEW_LENGTH] + ("…" if len(snippet) > MEMORY_SNIPPET_PREVIEW_LENGTH else "")
       table.add_row(entry.entry_id, entry.label or "—", snippet or "—")
     console.print(table)
 
@@ -757,7 +761,7 @@ class PlanningRepl:
     text = (item.snippet or item.body or "").strip()
     if not text:
       return ""
-    return text[:96] + ("…" if len(text) > 96 else "")
+    return text[:TABLE_TEXT_PREVIEW_LENGTH] + ("…" if len(text) > TABLE_TEXT_PREVIEW_LENGTH else "")
 
   def _flush_pending_injections(self) -> None:
     if not self._pending_log_items:
