@@ -123,8 +123,18 @@ class PlanningRepl:
         )
       except LlmCompletionError as exc:
         message = exc.message
+        context_info = [
+          f"[red bold]LLM Call Failed[/red bold]",
+          f"Model: {self._registry.current_id}",
+          f"Turn: {self._turn_index}",
+          f"Error: {message}",
+        ]
+        if self._mcp_context:
+          context_info.append(f"Context active: {len(self._context_chunks)} chunk(s)")
+        if self._mcp_query_history:
+          context_info.append(f"Recent MCP queries: {len(self._mcp_query_history)}")
+        console.print(Panel("\n".join(context_info), border_style="red"))
         error_text = f"LLM call failed: {message}"
-        console.print(f"[red]{error_text}[/red]")
         self._log.end_turn(self._turn_index, error_text)
         continue
       tool_events = self._registry.pop_tool_events()

@@ -119,6 +119,12 @@ class ModelRegistry:
         raise RuntimeError("litellm BadRequest: " + str(exc)) from exc
       except Exception as exc:  # noqa: BLE001
         if supports_functions and isinstance(exc, getattr(litellm, "BadRequestError", Exception)):
+          import sys
+          print(
+            f"[Warning] Model {model.model_name} does not support function calling. "
+            f"Falling back to textual tool mode.",
+            file=sys.stderr,
+          )
           self._provider_supports_functions[provider.type] = False
           supports_functions = False
           tools_payload = None
@@ -131,7 +137,11 @@ class ModelRegistry:
         if mcp_client is None:
           raise RuntimeError("Model tried to invoke MCP tools but no client is configured.")
         if attempt >= max_tool_iterations:
-          raise RuntimeError("LLM requested too many MCP tool calls.")
+          raise RuntimeError(
+            f"LLM exceeded maximum tool iterations ({max_tool_iterations}). "
+            f"The model may be stuck in a loop trying to call: {server_id}:{tool_name}. "
+            f"Try rephrasing your request or switching models."
+          )
         tool_call = tool_calls[0]
         server_id, tool_name, params = self._parse_mcp_tool_call(tool_call)
         result = mcp_client.call_tool(server_id, tool_name, params)
@@ -152,8 +162,20 @@ class ModelRegistry:
           self._log_tool_event(server_id, tool_name, params, result)
           attempt += 1
           if attempt >= max_tool_iterations:
-            raise RuntimeError("LLM requested too many MCP tool calls.")
+            raise RuntimeError(
+              f"LLM exceeded maximum tool iterations ({max_tool_iterations}) using textual tool calls. "
+              f"Last tool requested: {server_id}:{tool_name}. "
+              f"The model may not support your current MCP server or query. Try simplifying your request."
+            )
           continue
+      if not text_output or not text_output.strip():
+        raise RuntimeError(
+          "LLM returned empty response. This may indicate:\n"
+          "  - Model output was filtered by content policy\n"
+          "  - Request exceeded context length\n"
+          "  - Model encountered an internal error\n"
+          "Try rephrasing your request or using a different model."
+        )
       return text_output
 
   def _should_enable_mcp_tools(self, mcp_client: Optional[McpClient]) -> bool:

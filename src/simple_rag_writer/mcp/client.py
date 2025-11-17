@@ -52,10 +52,28 @@ class McpClient:
 
   async def _call_tool_async(self, server_id: str, tool_name: str, params: Dict[str, Any]) -> McpToolResult:
     server = self._get_server(server_id)
-    async with self._connect(server) as session:
-      result = await session.call_tool(tool_name, params or {})
-    payload = self._extract_payload(result, server_id, tool_name)
-    return McpToolResult(server_id=server_id, tool_name=tool_name, payload=payload)
+    timeout = server.timeout
+
+    # Use timeout if configured
+    if timeout is not None and timeout > 0:
+      with anyio.fail_after(timeout):
+        try:
+          async with self._connect(server) as session:
+            result = await session.call_tool(tool_name, params or {})
+          payload = self._extract_payload(result, server_id, tool_name)
+          return McpToolResult(server_id=server_id, tool_name=tool_name, payload=payload)
+        except TimeoutError as exc:
+          raise McpToolError(
+            server_id,
+            tool_name,
+            f"MCP tool call timed out after {timeout} seconds"
+          ) from exc
+    else:
+      # No timeout
+      async with self._connect(server) as session:
+        result = await session.call_tool(tool_name, params or {})
+      payload = self._extract_payload(result, server_id, tool_name)
+      return McpToolResult(server_id=server_id, tool_name=tool_name, payload=payload)
 
   def _get_server(self, server_id: str) -> McpServerConfig:
     if server_id not in self._servers:

@@ -64,6 +64,7 @@ class McpServerConfig(BaseModel):
   id: str
   command: List[str]
   auto_start: bool = True
+  timeout: Optional[int] = 30  # seconds, None for no timeout
 
 
 class SkillConfig(BaseModel):
@@ -106,6 +107,8 @@ class AppConfig(BaseModel):
   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
   llm_tool: Optional[LlmToolConfig] = None
   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+  debug_mode: bool = False
+  verbose_llm_calls: bool = False
 
   @property
   def config_path(self) -> Optional[Path]:
