@@ -24,6 +24,7 @@ class ModelConfig(BaseModel):
   tags: List[str] = Field(default_factory=list)
   max_context_tokens: Optional[int] = None
   tool_iteration_override: Optional["ToolIterationConfig"] = None
+  streaming_override: Optional["StreamingConfig"] = None
 
   @model_validator(mode="before")
   @classmethod
@@ -113,6 +114,31 @@ class ToolIterationConfig(BaseModel):
   loop_window: int = Field(default=2, description="Number of recent calls to check for loops")
 
 
+class StreamingConfig(BaseModel):
+  """Configuration for LLM response streaming."""
+
+  enabled: bool = Field(
+    default=True,
+    description="Enable streaming output in planning mode"
+  )
+  enabled_in_tasks: bool = Field(
+    default=False,
+    description="Enable streaming in automated task runner (may clutter logs)"
+  )
+  show_progress_indicator: bool = Field(
+    default=True,
+    description="Show spinner/status during non-streaming phases"
+  )
+  buffer_tool_calls: bool = Field(
+    default=True,
+    description="Buffer streaming chunks until tool calls complete"
+  )
+  interrupt_on_ctrl_c: bool = Field(
+    default=True,
+    description="Allow Ctrl+C to stop current generation (not entire session)"
+  )
+
+
 class AppConfig(BaseModel):
   default_model: str
   providers: Dict[str, ProviderConfig]
@@ -125,6 +151,7 @@ class AppConfig(BaseModel):
   debug_mode: bool = False
   verbose_llm_calls: bool = False
   tool_iteration_defaults: Optional[ToolIterationConfig] = None
+  streaming_defaults: Optional[StreamingConfig] = None
 
   @property
   def config_path(self) -> Optional[Path]:

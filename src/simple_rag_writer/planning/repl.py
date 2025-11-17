@@ -78,7 +78,8 @@ class PlanningRepl:
         "/use and /url fetch references.\n"
         "/prompts lists system prompts, /prompt <id|default> selects one.\n"
         "/remember label:: text saves manual memory. /memory list|inject manage it.\n"
-        "/inject adds selected references to context, /context inspects it, /quit exits.",
+        "/inject adds selected references to context, /context inspects it.\n"
+        "/stream [on|off] toggles streaming output, /quit exits.",
         title="Simple Rag Writer",
       )
     )
@@ -112,16 +113,21 @@ class PlanningRepl:
         else None,
       )
       try:
-        output = run_completion_with_feedback(
-          self._registry,
-          prompt,
-          mcp_client=self._mcp_client,
-          system_prompt=self._selected_system_prompt,
-          max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
-          on_attempt_failure=partial(
-            self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
-          ),
-        )
+        # Check if streaming is enabled
+        streaming_config = self._get_streaming_config()
+        if streaming_config and streaming_config.enabled:
+          output = self._run_with_streaming(prompt)
+        else:
+          output = run_completion_with_feedback(
+            self._registry,
+            prompt,
+            mcp_client=self._mcp_client,
+            system_prompt=self._selected_system_prompt,
+            max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
+            on_attempt_failure=partial(
+              self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
+            ),
+          )
       except LlmCompletionError as exc:
         message = exc.message
         context_info = [
@@ -203,6 +209,9 @@ class PlanningRepl:
       return False
     if cmd == "/context":
       self._show_context()
+      return False
+    if cmd == "/stream":
+      self._toggle_streaming(args)
       return False
     console.print(f"[yellow]Unknown command:[/yellow] {line}")
     return False
@@ -764,3 +773,68 @@ class PlanningRepl:
       return
     title = f"MCP Context ({len(self._context_chunks)} chunk(s))"
     console.print(Panel(self._mcp_context or "", title=title))
+
+  def _get_streaming_config(self) -> Optional[Any]:  # Optional[StreamingConfig]
+    """Get effective streaming configuration."""
+    from simple_rag_writer.config.models import StreamingConfig
+    model = self._registry.current_model
+    return (
+      model.streaming_override
+      or self._config.streaming_defaults
+      or None
+    )
+
+  def _toggle_streaming(self, args: List[str]) -> None:
+    """Toggle streaming mode on or off."""
+    from simple_rag_writer.config.models import StreamingConfig
+
+    config = self._get_streaming_config()
+    if not config:
+      # Create default config if none exists
+      if not self._config.streaming_defaults:
+        self._config.streaming_defaults = StreamingConfig()
+      config = self._config.streaming_defaults
+
+    if args and args[0].lower() in ("on", "off"):
+      enable = args[0].lower() == "on"
+      config.enabled = enable
+      status = "enabled" if enable else "disabled"
+      console.print(f"[green]Streaming {status}.[/green]")
+    else:
+      # Toggle
+      config.enabled = not config.enabled
+      status = "enabled" if config.enabled else "disabled"
+      console.print(f"[green]Streaming {status}.[/green]")
+
+  def _run_with_streaming(self, prompt: str) -> str:
+    """
+    Run LLM completion with streaming output.
+
+    Uses hybrid approach: non-streaming for tool iterations,
+    streaming for final response.
+
+    Returns:
+      Complete response text
+    """
+    accumulated = []
+    def on_chunk(text: str) -> None:
+      """Handle each streamed chunk."""
+      accumulated.append(text)
+      console.print(text, end="", style="bold green")
+
+    try:
+      output = self._registry.complete_streaming(
+        prompt,
+        mcp_client=self._mcp_client,
+        system_prompt=self._selected_system_prompt,
+        on_chunk=on_chunk,
+      )
+      console.print()  # Newline after streaming completes
+      return output
+    except KeyboardInterrupt:
+      # User interrupted; return partial
+      console.print("\n[yellow][Interrupted][/yellow]")
+      partial = "".join(accumulated)
+      if partial:
+        return partial
+      raise
