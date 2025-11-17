@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-
+import litellm
+litellm._turn_on_debug()
 
 def _bootstrap_path() -> None:
   root = Path(__file__).resolve().parent
