@@ -74,7 +74,8 @@ class PlanningRepl:
       Panel(
         "Planning mode. Type to chat.\n"
         "/models list models, /model <id> switches.\n"
-        "/sources shows MCP servers, /use and /url fetch references.\n"
+        "/sources shows MCP servers, /mcp-status for diagnostics.\n"
+        "/use and /url fetch references.\n"
         "/prompts lists system prompts, /prompt <id|default> selects one.\n"
         "/remember label:: text saves manual memory. /memory list|inject manage it.\n"
         "/inject adds selected references to context, /context inspects it, /quit exits.",
@@ -187,6 +188,9 @@ class PlanningRepl:
       return False
     if cmd == "/sources":
       self._list_sources()
+      return False
+    if cmd == "/mcp-status":
+      self._show_mcp_diagnostics()
       return False
     if cmd == "/use":
       self._run_mcp_tool(args)
@@ -435,6 +439,38 @@ class PlanningRepl:
         text += f" — {description}"
       lines.append(text)
     return "\n".join(lines)
+
+  def _show_mcp_diagnostics(self) -> None:
+    """Show detailed MCP connection diagnostics."""
+    if not self._config.mcp_servers:
+      console.print("[yellow]No MCP servers configured.[/yellow]")
+      return
+
+    console.print("[bold]MCP Connection Diagnostics[/bold]\n")
+
+    for server in self._config.mcp_servers:
+      status_parts = [f"[cyan]Server:[/cyan] {server.id}"]
+
+      # Connection status - try to list tools to check if server is responsive
+      try:
+        tools = self._mcp_client.list_tools(server.id)
+        status_parts.append(f"  Status: [green]✓ Available[/green]")
+        status_parts.append(f"  Tools: {len(tools)} available")
+      except Exception as exc:  # noqa: BLE001
+        status_parts.append(f"  Status: [red]✗ Unavailable[/red]")
+        error_msg = str(exc)
+        if len(error_msg) > 80:
+          error_msg = error_msg[:77] + "..."
+        status_parts.append(f"  Error: {error_msg}")
+
+      # Configuration
+      status_parts.append(f"  Timeout: {server.timeout}s")
+      status_parts.append(f"  Retry attempts: {server.retry_attempts}")
+      status_parts.append(f"  Retry delay: {server.retry_delay_seconds}s")
+      status_parts.append(f"  Command: {' '.join(server.command)}")
+
+      console.print("\n".join(status_parts))
+      console.print()  # Blank line between servers
 
   def _run_mcp_tool(self, args: List[str]) -> None:
     if len(args) < 3:

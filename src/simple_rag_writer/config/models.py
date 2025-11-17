@@ -65,6 +65,8 @@ class McpServerConfig(BaseModel):
   command: List[str]
   auto_start: bool = True
   timeout: Optional[int] = 30  # seconds, None for no timeout
+  retry_attempts: int = 2  # number of retry attempts for transient failures
+  retry_delay_seconds: float = 1.0  # delay between retry attempts
 
 
 class SkillConfig(BaseModel):

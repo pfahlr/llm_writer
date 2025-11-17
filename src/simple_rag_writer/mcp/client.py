@@ -39,7 +39,43 @@ class McpClient:
     self._servers: Dict[str, McpServerConfig] = {server.id: server for server in config.mcp_servers}
 
   def call_tool(self, server_id: str, tool_name: str, params: Dict[str, Any]) -> McpToolResult:
-    return anyio.run(self._call_tool_async, server_id, tool_name, dict(params))
+    """
+    Call an MCP tool with retry logic.
+
+    Retries transient failures (timeouts, connection errors) based on
+    server configuration. Does not retry validation errors or tool not found.
+    """
+    server = self._get_server(server_id)
+    max_attempts = server.retry_attempts if server.retry_attempts > 0 else 1
+    delay = server.retry_delay_seconds
+
+    last_error = None
+    for attempt in range(max_attempts):
+      try:
+        return anyio.run(self._call_tool_async, server_id, tool_name, dict(params))
+      except McpToolError as exc:
+        last_error = exc
+        # Check if error is retryable
+        if not self._is_retryable_error(exc):
+          # Not retryable (validation error, tool not found, etc.)
+          raise
+
+        # If this was the last attempt, raise the error
+        if attempt >= max_attempts - 1:
+          raise McpToolError(
+            server_id,
+            tool_name,
+            f"MCP tool call failed after {max_attempts} attempts: {exc}"
+          ) from exc
+
+        # Wait before retrying (simple delay, not exponential for now)
+        import time
+        time.sleep(delay)
+
+    # Should not reach here, but just in case
+    if last_error:
+      raise last_error
+    raise McpToolError(server_id, tool_name, "Unknown error during retry")
 
   def list_tools(self, server_id: str) -> List[Dict[str, Any]]:
     return anyio.run(self._list_tools_async, server_id)
@@ -137,3 +173,29 @@ class McpClient:
       if isinstance(block, mcp_types.TextContent):
         return block.text
     return None
+
+  def _is_retryable_error(self, error: McpToolError) -> bool:
+    """
+    Determine if an MCP error should trigger a retry.
+
+    Retry on:
+    - Timeouts
+    - Connection errors
+    - Server unavailable
+
+    Do not retry on:
+    - Validation errors
+    - Tool not found
+    - Invalid parameters
+    """
+    error_msg = str(error).lower()
+    retryable_patterns = [
+      "timeout",
+      "timed out",
+      "connection",
+      "unavailable",
+      "refused",
+      "closed",
+      "failed to start",
+    ]
+    return any(pattern in error_msg for pattern in retryable_patterns)
