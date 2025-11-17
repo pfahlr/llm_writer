@@ -31,6 +31,10 @@ MAX_LLM_COMPLETION_ATTEMPTS = 2
 MCP_QUERY_HISTORY_LIMIT = 5
 MAX_MEMORY_SNAPSHOT_CHARS = 4000
 
+# Display formatting constants
+MEMORY_SNIPPET_PREVIEW_LENGTH = 80
+TABLE_TEXT_PREVIEW_LENGTH = 96
+
 
 @dataclass
 class _ResultBatch:
@@ -74,13 +78,19 @@ class PlanningRepl:
       Panel(
         "Planning mode. Type to chat.\n"
         "/models list models, /model <id> switches.\n"
-        "/sources shows MCP servers, /use and /url fetch references.\n"
+        "/sources shows MCP servers, /mcp-status for diagnostics.\n"
+        "/use and /url fetch references, /paste [label] for manual context.\n"
         "/prompts lists system prompts, /prompt <id|default> selects one.\n"
         "/remember label:: text saves manual memory. /memory list|inject manage it.\n"
-        "/inject adds selected references to context, /context inspects it, /quit exits.",
+        "/inject adds selected references to context, /context inspects it.\n"
+        "/stream [on|off] toggles streaming output, /quit exits.",
         title="Simple Rag Writer",
       )
     )
+
+    # Check health of required MCP servers before starting
+    self._check_required_servers_health()
+
     while True:
       try:
         line = console.input("[bold cyan]> [/bold cyan]").strip()
@@ -111,20 +121,35 @@ class PlanningRepl:
         else None,
       )
       try:
-        output = run_completion_with_feedback(
-          self._registry,
-          prompt,
-          mcp_client=self._mcp_client,
-          system_prompt=self._selected_system_prompt,
-          max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
-          on_attempt_failure=partial(
-            self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
-          ),
-        )
+        # Check if streaming is enabled
+        streaming_config = self._get_streaming_config()
+        if streaming_config and streaming_config.enabled:
+          output = self._run_with_streaming(prompt)
+        else:
+          output = run_completion_with_feedback(
+            self._registry,
+            prompt,
+            mcp_client=self._mcp_client,
+            system_prompt=self._selected_system_prompt,
+            max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
+            on_attempt_failure=partial(
+              self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
+            ),
+          )
       except LlmCompletionError as exc:
         message = exc.message
+        context_info = [
+          f"[red bold]LLM Call Failed[/red bold]",
+          f"Model: {self._registry.current_id}",
+          f"Turn: {self._turn_index}",
+          f"Error: {message}",
+        ]
+        if self._mcp_context:
+          context_info.append(f"Context active: {len(self._context_chunks)} chunk(s)")
+        if self._mcp_query_history:
+          context_info.append(f"Recent MCP queries: {len(self._mcp_query_history)}")
+        console.print(Panel("\n".join(context_info), border_style="red"))
         error_text = f"LLM call failed: {message}"
-        console.print(f"[red]{error_text}[/red]")
         self._log.end_turn(self._turn_index, error_text)
         continue
       tool_events = self._registry.pop_tool_events()
@@ -178,6 +203,9 @@ class PlanningRepl:
     if cmd == "/sources":
       self._list_sources()
       return False
+    if cmd == "/mcp-status":
+      self._show_mcp_diagnostics()
+      return False
     if cmd == "/use":
       self._run_mcp_tool(args)
       return False
@@ -189,6 +217,12 @@ class PlanningRepl:
       return False
     if cmd == "/context":
       self._show_context()
+      return False
+    if cmd == "/stream":
+      self._toggle_streaming(args)
+      return False
+    if cmd == "/paste":
+      self._paste_manual_context(args)
       return False
     console.print(f"[yellow]Unknown command:[/yellow] {line}")
     return False
@@ -327,7 +361,7 @@ class PlanningRepl:
     table.add_column("Snippet")
     for entry in entries:
       snippet = entry.text.replace("\n", " ").strip()
-      snippet = snippet[:80] + ("…" if len(snippet) > 80 else "")
+      snippet = snippet[:MEMORY_SNIPPET_PREVIEW_LENGTH] + ("…" if len(snippet) > MEMORY_SNIPPET_PREVIEW_LENGTH else "")
       table.add_row(entry.entry_id, entry.label or "—", snippet or "—")
     console.print(table)
 
@@ -425,6 +459,38 @@ class PlanningRepl:
         text += f" — {description}"
       lines.append(text)
     return "\n".join(lines)
+
+  def _show_mcp_diagnostics(self) -> None:
+    """Show detailed MCP connection diagnostics."""
+    if not self._config.mcp_servers:
+      console.print("[yellow]No MCP servers configured.[/yellow]")
+      return
+
+    console.print("[bold]MCP Connection Diagnostics[/bold]\n")
+
+    for server in self._config.mcp_servers:
+      status_parts = [f"[cyan]Server:[/cyan] {server.id}"]
+
+      # Connection status - try to list tools to check if server is responsive
+      try:
+        tools = self._mcp_client.list_tools(server.id)
+        status_parts.append(f"  Status: [green]✓ Available[/green]")
+        status_parts.append(f"  Tools: {len(tools)} available")
+      except Exception as exc:  # noqa: BLE001
+        status_parts.append(f"  Status: [red]✗ Unavailable[/red]")
+        error_msg = str(exc)
+        if len(error_msg) > 80:
+          error_msg = error_msg[:77] + "..."
+        status_parts.append(f"  Error: {error_msg}")
+
+      # Configuration
+      status_parts.append(f"  Timeout: {server.timeout}s")
+      status_parts.append(f"  Retry attempts: {server.retry_attempts}")
+      status_parts.append(f"  Retry delay: {server.retry_delay_seconds}s")
+      status_parts.append(f"  Command: {' '.join(server.command)}")
+
+      console.print("\n".join(status_parts))
+      console.print()  # Blank line between servers
 
   def _run_mcp_tool(self, args: List[str]) -> None:
     if len(args) < 3:
@@ -587,7 +653,6 @@ class PlanningRepl:
       self._pending_log_items.extend(log_items)
     console.print(f"[green]Injected {len(selected)} item(s) into context.[/green]")
     self._save_memory_chunk(chunk, chunk_label)
-    self._save_memory_chunk(chunk, chunk_label)
 
   def _parse_indices(self, args: List[str]) -> List[int]:
     text = " ".join(args).replace(",", " ")
@@ -703,7 +768,7 @@ class PlanningRepl:
     text = (item.snippet or item.body or "").strip()
     if not text:
       return ""
-    return text[:96] + ("…" if len(text) > 96 else "")
+    return text[:TABLE_TEXT_PREVIEW_LENGTH] + ("…" if len(text) > TABLE_TEXT_PREVIEW_LENGTH else "")
 
   def _flush_pending_injections(self) -> None:
     if not self._pending_log_items:
@@ -719,3 +784,160 @@ class PlanningRepl:
       return
     title = f"MCP Context ({len(self._context_chunks)} chunk(s))"
     console.print(Panel(self._mcp_context or "", title=title))
+
+  def _get_streaming_config(self) -> Optional[Any]:  # Optional[StreamingConfig]
+    """Get effective streaming configuration."""
+    from simple_rag_writer.config.models import StreamingConfig
+    model = self._registry.current_model
+    return (
+      model.streaming_override
+      or self._config.streaming_defaults
+      or None
+    )
+
+  def _toggle_streaming(self, args: List[str]) -> None:
+    """Toggle streaming mode on or off."""
+    from simple_rag_writer.config.models import StreamingConfig
+
+    config = self._get_streaming_config()
+    if not config:
+      # Create default config if none exists
+      if not self._config.streaming_defaults:
+        self._config.streaming_defaults = StreamingConfig()
+      config = self._config.streaming_defaults
+
+    if args and args[0].lower() in ("on", "off"):
+      enable = args[0].lower() == "on"
+      config.enabled = enable
+      status = "enabled" if enable else "disabled"
+      console.print(f"[green]Streaming {status}.[/green]")
+    else:
+      # Toggle
+      config.enabled = not config.enabled
+      status = "enabled" if config.enabled else "disabled"
+      console.print(f"[green]Streaming {status}.[/green]")
+
+  def _paste_manual_context(self, args: List[str]) -> None:
+    """
+    Allow user to paste multi-line context manually.
+
+    Useful when MCP servers are unavailable or for ad-hoc context injection.
+    """
+    label = " ".join(args).strip() or "Manual context"
+
+    console.print(
+      f"[yellow]Paste or type context for '{label}'.[/yellow]\n"
+      "[dim]End with a line containing only '###' or press Ctrl+D[/dim]\n"
+    )
+
+    lines = []
+    while True:
+      try:
+        line = input()
+        if line.strip() == "###":
+          break
+        lines.append(line)
+      except (EOFError, KeyboardInterrupt):
+        break
+
+    if not lines:
+      console.print("[yellow]No context provided.[/yellow]")
+      return
+
+    context_text = "\n".join(lines).strip()
+    chunk = f"### {label}\n{context_text}"
+
+    self._context_chunks.append(chunk)
+    self._mcp_context = "\n\n".join(self._context_chunks).strip()
+
+    console.print(
+      f"[green]✓ Added {len(lines)} lines of manual context as '{label}'.[/green]"
+    )
+
+  def _check_required_servers_health(self) -> None:
+    """Check health of required MCP servers before starting session."""
+    from simple_rag_writer.mcp.health import check_required_servers
+
+    if not self._config.mcp_servers:
+      # No MCP servers configured, nothing to check
+      return
+
+    all_ok, statuses = check_required_servers(self._config, self._mcp_client)
+
+    if not all_ok:
+      console.print("[yellow]⚠ Warning: Some required MCP servers are unavailable:[/yellow]\n")
+
+      table = Table()
+      table.add_column("Server", style="cyan")
+      table.add_column("Criticality")
+      table.add_column("Status")
+      table.add_column("Error")
+
+      for status in statuses:
+        server_cfg = next(
+          (s for s in self._config.mcp_servers if s.id == status.server_id), None
+        )
+        if not server_cfg:
+          continue
+
+        criticality_style = {
+          "required": "[red]Required[/red]",
+          "optional": "[yellow]Optional[/yellow]",
+          "best_effort": "[dim]Best effort[/dim]",
+        }.get(server_cfg.criticality, server_cfg.criticality)
+
+        if server_cfg.criticality == "required" and not status.available:
+          table.add_row(
+            status.server_id,
+            criticality_style,
+            "[red]✗ Unavailable[/red]",
+            status.error or "Unknown error",
+          )
+
+      if table.row_count > 0:
+        console.print(table)
+        console.print("\n[yellow]Continue anyway? (y/N):[/yellow] ", end="")
+        try:
+          response = input().strip().lower()
+          if response not in ("y", "yes"):
+            console.print("[red]Aborting due to unavailable required servers.[/red]")
+            import sys
+            sys.exit(1)
+        except (EOFError, KeyboardInterrupt):
+          console.print("\n[red]Aborting due to unavailable required servers.[/red]")
+          import sys
+          sys.exit(1)
+        console.print("[green]Continuing with degraded MCP functionality...[/green]\n")
+
+  def _run_with_streaming(self, prompt: str) -> str:
+    """
+    Run LLM completion with streaming output.
+
+    Uses hybrid approach: non-streaming for tool iterations,
+    streaming for final response.
+
+    Returns:
+      Complete response text
+    """
+    accumulated = []
+    def on_chunk(text: str) -> None:
+      """Handle each streamed chunk."""
+      accumulated.append(text)
+      console.print(text, end="", style="bold green")
+
+    try:
+      output = self._registry.complete_streaming(
+        prompt,
+        mcp_client=self._mcp_client,
+        system_prompt=self._selected_system_prompt,
+        on_chunk=on_chunk,
+      )
+      console.print()  # Newline after streaming completes
+      return output
+    except KeyboardInterrupt:
+      # User interrupted; return partial
+      console.print("\n[yellow][Interrupted][/yellow]")
+      partial = "".join(accumulated)
+      if partial:
+        return partial
+      raise

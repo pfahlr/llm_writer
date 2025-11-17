@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProviderConfig(BaseModel):
@@ -23,6 +23,8 @@ class ModelConfig(BaseModel):
   system_prompt: Optional[str] = None
   tags: List[str] = Field(default_factory=list)
   max_context_tokens: Optional[int] = None
+  tool_iteration_override: Optional["ToolIterationConfig"] = None
+  streaming_override: Optional["StreamingConfig"] = None
 
   @model_validator(mode="before")
   @classmethod
@@ -64,6 +66,21 @@ class McpServerConfig(BaseModel):
   id: str
   command: List[str]
   auto_start: bool = True
+  timeout: Optional[int] = 30  # seconds, None for no timeout
+  retry_attempts: int = 2  # number of retry attempts for transient failures
+  retry_delay_seconds: float = 1.0  # delay between retry attempts
+  criticality: str = Field(
+    default="optional",
+    description="Server criticality: required, optional, or best_effort"
+  )
+
+  @field_validator('criticality')
+  @classmethod
+  def validate_criticality(cls, v: str) -> str:
+    valid = {"required", "optional", "best_effort"}
+    if v not in valid:
+      raise ValueError(f"criticality must be one of {valid}")
+    return v
 
 
 class SkillConfig(BaseModel):
@@ -97,6 +114,43 @@ class LoggingConfig(BaseModel):
   planning: PlanningLoggingConfig = Field(default_factory=PlanningLoggingConfig)
 
 
+class ToolIterationConfig(BaseModel):
+  """Configuration for LLM tool calling iteration behavior."""
+
+  max_iterations: int = Field(
+    default=3, ge=1, le=20, description="Maximum tool calls per completion"
+  )
+  detect_loops: bool = Field(
+    default=True, description="Detect and prevent identical repeated tool calls"
+  )
+  loop_window: int = Field(default=2, description="Number of recent calls to check for loops")
+
+
+class StreamingConfig(BaseModel):
+  """Configuration for LLM response streaming."""
+
+  enabled: bool = Field(
+    default=True,
+    description="Enable streaming output in planning mode"
+  )
+  enabled_in_tasks: bool = Field(
+    default=False,
+    description="Enable streaming in automated task runner (may clutter logs)"
+  )
+  show_progress_indicator: bool = Field(
+    default=True,
+    description="Show spinner/status during non-streaming phases"
+  )
+  buffer_tool_calls: bool = Field(
+    default=True,
+    description="Buffer streaming chunks until tool calls complete"
+  )
+  interrupt_on_ctrl_c: bool = Field(
+    default=True,
+    description="Allow Ctrl+C to stop current generation (not entire session)"
+  )
+
+
 class AppConfig(BaseModel):
   default_model: str
   providers: Dict[str, ProviderConfig]
@@ -106,6 +160,10 @@ class AppConfig(BaseModel):
   mcp_prompt_policy: McpPromptPolicy = Field(default_factory=McpPromptPolicy)
   llm_tool: Optional[LlmToolConfig] = None
   logging: LoggingConfig = Field(default_factory=LoggingConfig)
+  debug_mode: bool = False
+  verbose_llm_calls: bool = False
+  tool_iteration_defaults: Optional[ToolIterationConfig] = None
+  streaming_defaults: Optional[StreamingConfig] = None
 
   @property
   def config_path(self) -> Optional[Path]:
