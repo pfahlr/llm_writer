@@ -27,6 +27,7 @@ class ModelRegistry:
     self._current_id = config.default_model
     self._provider_supports_functions: Dict[str, bool] = {}
     self._tool_events: List[str] = []
+    self._tool_call_history: List[Tuple[str, str, str]] = []  # (server, tool, json_params)
 
   @property
   def current_id(self) -> str:
@@ -107,7 +108,12 @@ class ModelRegistry:
     tools_payload = [self._build_mcp_tool_definition(tool_metadata)] if supports_functions and has_mcp_tools else None
     completion_kwargs = dict(kwargs)
     attempt = 0
-    max_tool_iterations = 3
+    # Get configurable tool iteration settings
+    tool_config = self._get_tool_iteration_config()
+    max_tool_iterations = tool_config.max_iterations if tool_config else 3
+    detect_loops = tool_config.detect_loops if tool_config else True
+    # Clear tool call history at start of new completion
+    self.clear_tool_call_history()
     while True:
       call_kwargs = dict(completion_kwargs)
       call_kwargs["messages"] = [dict(msg) for msg in messages]
@@ -144,6 +150,17 @@ class ModelRegistry:
           )
         tool_call = tool_calls[0]
         server_id, tool_name, params = self._parse_mcp_tool_call(tool_call)
+
+        # Record tool call and check for loops
+        call_signature = (server_id, tool_name, json.dumps(params, sort_keys=True))
+        if detect_loops and self._is_loop_detected(call_signature):
+          raise RuntimeError(
+            f"Tool call loop detected: {server_id}:{tool_name} called repeatedly "
+            f"with identical parameters. The model may be stuck. "
+            f"Try rephrasing your request or reducing complexity."
+          )
+        self._tool_call_history.append(call_signature)
+
         result = mcp_client.call_tool(server_id, tool_name, params)
         messages.append(self._build_assistant_tool_message(message))
         messages.append(self._render_mcp_tool_result(result, tool_call))
@@ -156,6 +173,17 @@ class ModelRegistry:
           if mcp_client is None:
             raise RuntimeError("Model requested MCP tool via text but no client is configured.")
           server_id, tool_name, params = parsed
+
+          # Record tool call and check for loops
+          call_signature = (server_id, tool_name, json.dumps(params, sort_keys=True))
+          if detect_loops and self._is_loop_detected(call_signature):
+            raise RuntimeError(
+              f"Tool call loop detected: {server_id}:{tool_name} called repeatedly "
+              f"with identical parameters. The model may be stuck. "
+              f"Try rephrasing your request or reducing complexity."
+            )
+          self._tool_call_history.append(call_signature)
+
           result = mcp_client.call_tool(server_id, tool_name, params)
           messages.append({"role": "assistant", "content": text_output})
           messages.append(self._render_textual_tool_message(result, server_id, tool_name, params))
@@ -231,6 +259,51 @@ class ModelRegistry:
     events = list(self._tool_events)
     self._tool_events.clear()
     return events
+
+  def get_tool_call_history(self) -> List[Tuple[str, str, Dict[str, Any]]]:
+    """Return recent tool call history for this completion."""
+    return [
+      (server, tool, json.loads(params_json))
+      for server, tool, params_json in self._tool_call_history
+    ]
+
+  def clear_tool_call_history(self) -> None:
+    """Clear tool call history (called at start of new completion)."""
+    self._tool_call_history.clear()
+
+  def _get_tool_iteration_config(self) -> Optional[Any]:
+    """Get effective tool iteration config for current model."""
+    from simple_rag_writer.config.models import ToolIterationConfig
+
+    model = self.current_model
+    # Priority: model override > app defaults > built-in defaults
+    return (
+      model.tool_iteration_override
+      or self._config.tool_iteration_defaults
+      or ToolIterationConfig()  # Use default values
+    )
+
+  def _is_loop_detected(self, call_signature: Tuple[str, str, str]) -> bool:
+    """
+    Check if current call matches recent history (loop detection).
+
+    A loop is detected if the same (server, tool, params) appears
+    multiple times within the loop_window.
+    """
+    config = self._get_tool_iteration_config()
+    if not config or not config.detect_loops:
+      return False
+
+    window = config.loop_window
+
+    # Check last N calls
+    recent = self._tool_call_history[-window:] if len(self._tool_call_history) >= window else self._tool_call_history
+
+    # Count how many times this signature appears in recent history
+    matches = [call for call in recent if call == call_signature]
+
+    # If we've seen this exact call 2+ times in window, it's a loop
+    return len(matches) >= 2
 
   def _build_tool_name_list(self, tool_metadata: Dict[str, List[Dict[str, Any]]]) -> List[str]:
     names = sorted(

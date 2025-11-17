@@ -23,6 +23,7 @@ class ModelConfig(BaseModel):
   system_prompt: Optional[str] = None
   tags: List[str] = Field(default_factory=list)
   max_context_tokens: Optional[int] = None
+  tool_iteration_override: Optional["ToolIterationConfig"] = None
 
   @model_validator(mode="before")
   @classmethod
@@ -100,6 +101,18 @@ class LoggingConfig(BaseModel):
   planning: PlanningLoggingConfig = Field(default_factory=PlanningLoggingConfig)
 
 
+class ToolIterationConfig(BaseModel):
+  """Configuration for LLM tool calling iteration behavior."""
+
+  max_iterations: int = Field(
+    default=3, ge=1, le=20, description="Maximum tool calls per completion"
+  )
+  detect_loops: bool = Field(
+    default=True, description="Detect and prevent identical repeated tool calls"
+  )
+  loop_window: int = Field(default=2, description="Number of recent calls to check for loops")
+
+
 class AppConfig(BaseModel):
   default_model: str
   providers: Dict[str, ProviderConfig]
@@ -111,6 +124,7 @@ class AppConfig(BaseModel):
   logging: LoggingConfig = Field(default_factory=LoggingConfig)
   debug_mode: bool = False
   verbose_llm_calls: bool = False
+  tool_iteration_defaults: Optional[ToolIterationConfig] = None
 
   @property
   def config_path(self) -> Optional[Path]:
