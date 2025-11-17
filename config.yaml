@@ -3,7 +3,6 @@ version: 0.1
 
 # Change this to whatever you want as your global default
 default_model: or-mistral-small-3.2-24b
-
 providers:
   openrouter:
     type: openrouter
@@ -39,7 +38,7 @@ models:
       max_tokens: 1048576
     tags: ["google", "gemini", "advanced"]
 
- - id: gemini-2.0-flash
+  - id: gemini-2.0-flash
     label: "Gemini 2.0 Flash"
     litellm_model: "gemini/gemini-2.0-flash"
     provider: google
@@ -392,3 +391,8 @@ mcp_servers:
       - "llm-context"
       - "lc-mcp"
     auto_start: true
+  - id: rushdb
+    command:
+     - "npx"
+     - "@rushdb/mcp-server"
+
