@@ -15,6 +15,7 @@ from simple_rag_writer.prompts.task_prompt import build_task_prompt
 from simple_rag_writer.runner.url_fetcher import build_url_items, fetch_url_text
 from simple_rag_writer.tasks.loader import expand_task_paths, load_task
 from simple_rag_writer.tasks.models import McpReference, ReferenceCommon, UrlReference
+from simple_rag_writer.tasks.outline_loader import load_outline_safe
 
 console = Console()
 
@@ -49,7 +50,20 @@ def run_tasks_for_paths(
 
       reference_blobs: List[str] = []
 
-      outline_context = None  # TODO: outline loading
+      # Load outline context if specified
+      outline_context = None
+      if task.context and task.context.outline_path:
+        outline_path = Path(task.context.outline_path)
+        outline = load_outline_safe(outline_path)
+        if outline:
+          # Use task.context.outline_id or fallback to task.id
+          section_id = task.context.outline_id or task.id
+          outline_context = outline.get_context_for_section(section_id)
+
+          if not outline_context:
+            console.print(
+              f"[yellow]Warning: Section {section_id} not found in outline {outline_path}[/yellow]"
+            )
 
       for ref in task.references:
         if isinstance(ref, McpReference):
