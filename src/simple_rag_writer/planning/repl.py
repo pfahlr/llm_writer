@@ -79,7 +79,7 @@ class PlanningRepl:
         "Planning mode. Type to chat.\n"
         "/models list models, /model <id> switches.\n"
         "/sources shows MCP servers, /mcp-status for diagnostics.\n"
-        "/use and /url fetch references.\n"
+        "/use and /url fetch references, /paste [label] for manual context.\n"
         "/prompts lists system prompts, /prompt <id|default> selects one.\n"
         "/remember label:: text saves manual memory. /memory list|inject manage it.\n"
         "/inject adds selected references to context, /context inspects it.\n"
@@ -87,6 +87,10 @@ class PlanningRepl:
         title="Simple Rag Writer",
       )
     )
+
+    # Check health of required MCP servers before starting
+    self._check_required_servers_health()
+
     while True:
       try:
         line = console.input("[bold cyan]> [/bold cyan]").strip()
@@ -216,6 +220,9 @@ class PlanningRepl:
       return False
     if cmd == "/stream":
       self._toggle_streaming(args)
+      return False
+    if cmd == "/paste":
+      self._paste_manual_context(args)
       return False
     console.print(f"[yellow]Unknown command:[/yellow] {line}")
     return False
@@ -809,6 +816,98 @@ class PlanningRepl:
       config.enabled = not config.enabled
       status = "enabled" if config.enabled else "disabled"
       console.print(f"[green]Streaming {status}.[/green]")
+
+  def _paste_manual_context(self, args: List[str]) -> None:
+    """
+    Allow user to paste multi-line context manually.
+
+    Useful when MCP servers are unavailable or for ad-hoc context injection.
+    """
+    label = " ".join(args).strip() or "Manual context"
+
+    console.print(
+      f"[yellow]Paste or type context for '{label}'.[/yellow]\n"
+      "[dim]End with a line containing only '###' or press Ctrl+D[/dim]\n"
+    )
+
+    lines = []
+    while True:
+      try:
+        line = input()
+        if line.strip() == "###":
+          break
+        lines.append(line)
+      except (EOFError, KeyboardInterrupt):
+        break
+
+    if not lines:
+      console.print("[yellow]No context provided.[/yellow]")
+      return
+
+    context_text = "\n".join(lines).strip()
+    chunk = f"### {label}\n{context_text}"
+
+    self._context_chunks.append(chunk)
+    self._mcp_context = "\n\n".join(self._context_chunks).strip()
+
+    console.print(
+      f"[green]✓ Added {len(lines)} lines of manual context as '{label}'.[/green]"
+    )
+
+  def _check_required_servers_health(self) -> None:
+    """Check health of required MCP servers before starting session."""
+    from simple_rag_writer.mcp.health import check_required_servers
+
+    if not self._config.mcp_servers:
+      # No MCP servers configured, nothing to check
+      return
+
+    all_ok, statuses = check_required_servers(self._config, self._mcp_client)
+
+    if not all_ok:
+      console.print("[yellow]⚠ Warning: Some required MCP servers are unavailable:[/yellow]\n")
+
+      table = Table()
+      table.add_column("Server", style="cyan")
+      table.add_column("Criticality")
+      table.add_column("Status")
+      table.add_column("Error")
+
+      for status in statuses:
+        server_cfg = next(
+          (s for s in self._config.mcp_servers if s.id == status.server_id), None
+        )
+        if not server_cfg:
+          continue
+
+        criticality_style = {
+          "required": "[red]Required[/red]",
+          "optional": "[yellow]Optional[/yellow]",
+          "best_effort": "[dim]Best effort[/dim]",
+        }.get(server_cfg.criticality, server_cfg.criticality)
+
+        if server_cfg.criticality == "required" and not status.available:
+          table.add_row(
+            status.server_id,
+            criticality_style,
+            "[red]✗ Unavailable[/red]",
+            status.error or "Unknown error",
+          )
+
+      if table.row_count > 0:
+        console.print(table)
+        console.print("\n[yellow]Continue anyway? (y/N):[/yellow] ", end="")
+        try:
+          response = input().strip().lower()
+          if response not in ("y", "yes"):
+            console.print("[red]Aborting due to unavailable required servers.[/red]")
+            import sys
+            sys.exit(1)
+        except (EOFError, KeyboardInterrupt):
+          console.print("\n[red]Aborting due to unavailable required servers.[/red]")
+          import sys
+          sys.exit(1)
+        console.print("[green]Continuing with degraded MCP functionality...[/green]\n")
 
   def _run_with_streaming(self, prompt: str) -> str:
     """
