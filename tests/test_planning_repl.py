@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from rich.panel import Panel
@@ -13,9 +14,9 @@ from simple_rag_writer.config.models import (
   ModelConfig,
   ProviderConfig,
 )
-from simple_rag_writer.mcp.types import McpToolResult
-from simple_rag_writer.planning.memory import ManualMemoryStore
+from simple_rag_writer.mcp.types import McpToolResult, NormalizedItem
 from simple_rag_writer.planning import repl as repl_module
+from simple_rag_writer.planning.memory import ManualMemoryEntry, ManualMemoryStore
 from simple_rag_writer.planning.repl import MCP_QUERY_HISTORY_LIMIT, PlanningRepl
 
 
@@ -38,6 +39,40 @@ def _make_config(
 class _FakeModel:
   id: str
   model_name: str
+
+
+class _TrackingMemoryStore:
+  def __init__(self) -> None:
+    self.entries: List[ManualMemoryEntry] = []
+
+  def add(self, text: str, label: Optional[str] = None) -> ManualMemoryEntry:
+    entry = ManualMemoryEntry(
+      entry_id=str(len(self.entries) + 1),
+      label=label,
+      text=text,
+      created_at=datetime.now(timezone.utc),
+    )
+    self.entries.append(entry)
+    return entry
+
+  def list_entries(self) -> List[ManualMemoryEntry]:
+    return list(self.entries)
+
+  def get(self, entry_id: str) -> Optional[ManualMemoryEntry]:
+    for entry in self.entries:
+      if entry.entry_id == entry_id:
+        return entry
+    return None
+
+  def delete(self, entry_id: str) -> bool:
+    for idx, entry in enumerate(self.entries):
+      if entry.entry_id == entry_id:
+        del self.entries[idx]
+        return True
+    return False
+
+  def clear(self) -> None:
+    self.entries.clear()
 
 
 class _FakeModelRegistry:
@@ -261,6 +296,35 @@ def test_memory_inject_adds_text_to_context(monkeypatch) -> None:
 
   assert repl._mcp_context is not None
   assert "evaluation metrics" in repl._mcp_context
+
+
+def test_inject_results_saves_reference_to_memory(monkeypatch) -> None:
+  store = _TrackingMemoryStore()
+  repl, _, _, _ = _make_repl(monkeypatch, memory_store=store)
+  repl._last_batch = repl_module._ResultBatch(
+    source="mcp",
+    items=[NormalizedItem(title="Doc", body="Critical insight")],
+    label="DocLabel",
+    server="srv",
+    tool="tool",
+  )
+
+  repl._inject_results(["1"])
+
+  assert any("Critical insight" in entry.text for entry in store.entries)
+
+
+def test_turn_snapshot_saved_to_memory(monkeypatch) -> None:
+  store = _TrackingMemoryStore()
+  repl, _, _, _ = _make_repl(
+    monkeypatch,
+    console_inputs=["Outline the plan", "/quit"],
+    memory_store=store,
+  )
+
+  repl.run()
+
+  assert any("Outline the plan" in entry.text for entry in store.entries)
 
 
 def test_handle_command_lists_sources(monkeypatch) -> None:

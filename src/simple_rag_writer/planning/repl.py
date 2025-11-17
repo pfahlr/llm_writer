@@ -29,6 +29,7 @@ console = Console()
 HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW
 MAX_LLM_COMPLETION_ATTEMPTS = 2
 MCP_QUERY_HISTORY_LIMIT = 5
+MAX_MEMORY_SNAPSHOT_CHARS = 4000
 
 
 @dataclass
@@ -133,6 +134,7 @@ class PlanningRepl:
       self._log.end_turn(self._turn_index, output)
       console.print(f"[bold green]{output}[/bold green]")
       self._history.append((line, output))
+      self._record_turn_snapshot(line, output)
 
     self._log.close()
 
@@ -357,6 +359,30 @@ class PlanningRepl:
       return ""
     return f"### {label}\n{content}".strip()
 
+  def _save_memory_chunk(self, chunk: str, label: Optional[str]) -> None:
+    text = (chunk or "").strip()
+    if not text:
+      return
+    prefix = label or "reference"
+    try:
+      self._memory_store.add(text, label=f"reference:{prefix}")
+    except ValueError:
+      pass
+
+  def _record_turn_snapshot(self, user_text: str, assistant_text: str) -> None:
+    text = (
+      f"User turn {self._turn_index}:\n{user_text.strip()}\n\nAssistant:\n{assistant_text.strip()}"
+    ).strip()
+    if not text:
+      return
+    if len(text) > MAX_MEMORY_SNAPSHOT_CHARS:
+      text = text[: MAX_MEMORY_SNAPSHOT_CHARS - 1] + "…"
+    label = f"turn-{self._turn_index}"
+    try:
+      self._memory_store.add(text, label=label)
+    except ValueError:
+      pass
+
   def _list_sources(self) -> None:
     servers = self._config.mcp_servers
     if not servers:
@@ -560,6 +586,8 @@ class PlanningRepl:
     if log_items:
       self._pending_log_items.extend(log_items)
     console.print(f"[green]Injected {len(selected)} item(s) into context.[/green]")
+    self._save_memory_chunk(chunk, chunk_label)
+    self._save_memory_chunk(chunk, chunk_label)
 
   def _parse_indices(self, args: List[str]) -> List[int]:
     text = " ".join(args).replace(",", " ")
