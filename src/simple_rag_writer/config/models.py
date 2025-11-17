@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ProviderConfig(BaseModel):
@@ -69,6 +69,18 @@ class McpServerConfig(BaseModel):
   timeout: Optional[int] = 30  # seconds, None for no timeout
   retry_attempts: int = 2  # number of retry attempts for transient failures
   retry_delay_seconds: float = 1.0  # delay between retry attempts
+  criticality: str = Field(
+    default="optional",
+    description="Server criticality: required, optional, or best_effort"
+  )
+
+  @field_validator('criticality')
+  @classmethod
+  def validate_criticality(cls, v: str) -> str:
+    valid = {"required", "optional", "best_effort"}
+    if v not in valid:
+      raise ValueError(f"criticality must be one of {valid}")
+    return v
 
 
 class SkillConfig(BaseModel):

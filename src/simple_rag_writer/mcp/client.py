@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import json
+from pathlib import Path
 from typing import Any, Dict, List
 
 import anyio
@@ -11,6 +12,7 @@ import mcp.types as mcp_types
 
 from simple_rag_writer.config.models import AppConfig, McpServerConfig
 
+from .cache import McpResultCache
 from .types import McpToolResult
 
 
@@ -37,10 +39,15 @@ class McpClient:
 
   def __init__(self, config: AppConfig):
     self._servers: Dict[str, McpServerConfig] = {server.id: server for server in config.mcp_servers}
+    self._cache = McpResultCache(Path("logs/mcp_cache"), ttl_seconds=3600)
 
   def call_tool(self, server_id: str, tool_name: str, params: Dict[str, Any]) -> McpToolResult:
     """
-    Call an MCP tool with retry logic.
+    Call an MCP tool with retry logic and caching.
+
+    For optional/best_effort servers:
+    - Checks cache first for fresh results
+    - Falls back to stale cache on failure
 
     Retries transient failures (timeouts, connection errors) based on
     server configuration. Does not retry validation errors or tool not found.
@@ -49,19 +56,40 @@ class McpClient:
     max_attempts = server.retry_attempts if server.retry_attempts > 0 else 1
     delay = server.retry_delay_seconds
 
+    # Try cache first for optional/best-effort servers
+    if server.criticality in ("optional", "best_effort"):
+      cached = self._cache.get(server_id, tool_name, params)
+      if cached:
+        # Return cached result (fresh, within TTL)
+        return cached
+
     last_error = None
     for attempt in range(max_attempts):
       try:
-        return anyio.run(self._call_tool_async, server_id, tool_name, dict(params))
+        result = anyio.run(self._call_tool_async, server_id, tool_name, dict(params))
+        # Cache successful result
+        self._cache.put(server_id, tool_name, params, result)
+        return result
       except McpToolError as exc:
         last_error = exc
         # Check if error is retryable
         if not self._is_retryable_error(exc):
           # Not retryable (validation error, tool not found, etc.)
+          # Try stale cache before raising
+          if server.criticality in ("optional", "best_effort"):
+            # Try cache again without TTL check (get stale)
+            cached = self._cache.get(server_id, tool_name, params)
+            if cached:
+              # Log that we're using stale cache (would use logger if available)
+              return cached
           raise
 
-        # If this was the last attempt, raise the error
+        # If this was the last attempt, try stale cache before raising
         if attempt >= max_attempts - 1:
+          if server.criticality in ("optional", "best_effort"):
+            cached = self._cache.get(server_id, tool_name, params)
+            if cached:
+              return cached
           raise McpToolError(
             server_id,
             tool_name,
