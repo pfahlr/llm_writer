@@ -597,7 +597,6 @@ class PlanningRepl:
       self._pending_log_items.extend(log_items)
     console.print(f"[green]Injected {len(selected)} item(s) into context.[/green]")
     self._save_memory_chunk(chunk, chunk_label)
-    self._save_memory_chunk(chunk, chunk_label)
 
   def _parse_indices(self, args: List[str]) -> List[int]:
     text = " ".join(args).replace(",", " ")
