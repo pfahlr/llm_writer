@@ -1,0 +1,411 @@
+id: 19
+filename: 19_add_streaming_response_support.yaml
+title: Add streaming response support for real-time LLM output
+priority: medium
+description: >
+  Implement streaming mode for LLM completions to provide real-time feedback
+  during response generation, significantly improving perceived responsiveness
+  in planning mode and long-running task execution.
+
+problem_analysis:
+  current_behavior:
+    - All LLM calls wait for complete response before displaying
+    - Long responses (500+ tokens) have multi-second latency
+    - No progress indication during generation
+    - User has no idea if call is working or hung
+    - Cannot interrupt mid-generation
+
+  impact:
+    - Poor user experience waiting for long responses
+    - Perceived unreliability ("is it stuck?")
+    - Cannot cancel bad/runaway generations early
+    - Wasted time waiting for unwanted output to complete
+
+  litellm_support:
+    - litellm supports streaming via stream=True parameter
+    - Returns iterator of delta chunks
+    - Compatible with most providers (OpenAI, Anthropic, Google)
+    - Tool calls work differently in streaming mode
+
+dependencies:
+  - 03 (Model Registry)
+  - 09 (Planning REPL)
+  - 15 (Error reporting)
+
+goals:
+  - Planning mode shows streaming output in real-time
+  - User can interrupt streaming with Ctrl+C
+  - Streaming is configurable (can be disabled)
+  - Tool calls handled correctly in streaming mode
+  - Progress indicators for non-streaming phases (tool execution)
+  - Logs capture full response even in streaming mode
+
+design_considerations:
+  streaming_challenges:
+    - Tool calls may arrive mid-stream
+    - Must buffer and reassemble tool call JSON
+    - Rich console output needs careful chunk handling
+    - Logging requires final assembled text
+    - Error handling mid-stream is complex
+
+  ui_approach:
+    - Use rich.console.status() for "thinking" indicators
+    - Use rich.console.print() with end="" for streaming text
+    - Handle newlines and formatting gracefully
+    - Show "[Thinking...]" during tool calls
+    - Allow Ctrl+C to stop streaming (not abort entire session)
+
+changes:
+  - id: add_streaming_config
+    description: >
+      Add configuration flags to control streaming behavior.
+    files:
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - location: "AppConfig class"
+            add_fields: |
+              streaming_defaults: Optional[StreamingConfig] = None
+
+          - location: "ModelConfig class"
+            add_fields: |
+              streaming_override: Optional[StreamingConfig] = None
+
+          - location: "New class StreamingConfig"
+            content: |
+              class StreamingConfig(BaseModel):
+                """Configuration for LLM response streaming."""
+                enabled: bool = Field(
+                  default=True,
+                  description="Enable streaming output in planning mode"
+                )
+                enabled_in_tasks: bool = Field(
+                  default=False,
+                  description="Enable streaming in automated task runner (may clutter logs)"
+                )
+                show_progress_indicator: bool = Field(
+                  default=True,
+                  description="Show spinner/status during non-streaming phases"
+                )
+                buffer_tool_calls: bool = Field(
+                  default=True,
+                  description="Buffer streaming chunks until tool calls complete"
+                )
+                interrupt_on_ctrl_c: bool = Field(
+                  default=True,
+                  description="Allow Ctrl+C to stop current generation (not entire session)"
+                )
+
+  - id: implement_streaming_in_registry
+    description: >
+      Add streaming completion method to ModelRegistry.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "New method complete_streaming"
+            content: |
+              def complete_streaming(
+                self,
+                prompt: str,
+                model_id: Optional[str] = None,
+                task_params: Optional[Dict[str, Any]] = None,
+                mcp_client: Optional[McpClient] = None,
+                system_prompt: Optional[str] = None,
+                on_chunk: Optional[Callable[[str], None]] = None,
+                on_tool_call: Optional[Callable[[str, str, Dict], Any]] = None,
+              ) -> str:
+                """
+                Complete with streaming, yielding chunks in real-time.
+
+                Args:
+                  prompt: User prompt
+                  model_id: Override model
+                  task_params: Generation parameters
+                  mcp_client: MCP client for tool calls
+                  system_prompt: Override system prompt
+                  on_chunk: Callback for each text chunk
+                  on_tool_call: Callback when tool call detected
+
+                Returns:
+                  Complete assembled response text
+                """
+                if litellm is None:
+                  raise RuntimeError("litellm required for completions")
+
+                model = self._models[model_id] if model_id else self.current_model
+                provider = self._resolve_provider(model)
+                api_key = self._resolve_api_key(provider)
+                gen_params = merge_generation_params(self._config, model, task_params)
+
+                kwargs: Dict[str, Any] = {
+                  "model": model.model_name,
+                  "api_key": api_key,
+                  "stream": True,  # Enable streaming
+                }
+                if provider.base_url:
+                  kwargs["api_base"] = provider.base_url
+                kwargs.update(gen_params)
+
+                # Build messages (similar to complete())
+                system_content = self._build_system_content(
+                  model, mcp_client, system_prompt
+                )
+                messages: List[Dict[str, object]] = []
+                if system_content:
+                  messages.append({"role": "system", "content": system_content})
+                messages.append({"role": "user", "content": prompt})
+
+                kwargs["messages"] = messages
+
+                # Stream response
+                accumulated_text = []
+                tool_call_buffer = None
+
+                try:
+                  response_stream = litellm.completion(**kwargs)
+
+                  for chunk in response_stream:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if not delta:
+                      continue
+
+                    # Handle text content
+                    content = getattr(delta, "content", None)
+                    if content:
+                      accumulated_text.append(content)
+                      if on_chunk:
+                        on_chunk(content)
+
+                    # Handle tool calls (streamed in pieces)
+                    tool_calls = getattr(delta, "tool_calls", None)
+                    if tool_calls:
+                      # Tool call detected; may need buffering
+                      if tool_call_buffer is None:
+                        tool_call_buffer = {}
+                      # Accumulate tool call data (implementation depends on format)
+                      # This is simplified; actual implementation needs careful parsing
+                      pass
+
+                  # After stream completes
+                  final_text = "".join(accumulated_text)
+
+                  # Handle any buffered tool calls
+                  if tool_call_buffer and on_tool_call:
+                    # Execute tool call and continue (may require recursive call)
+                    pass
+
+                  return final_text
+
+                except KeyboardInterrupt:
+                  # User interrupted streaming
+                  partial_text = "".join(accumulated_text)
+                  if partial_text:
+                    return partial_text + "\n[Interrupted]"
+                  raise
+
+          - location: "Helper method _build_system_content"
+            description: "Extract common system prompt building logic"
+
+  - id: integrate_streaming_into_repl
+    description: >
+      Use streaming in planning REPL when enabled.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "LLM call in run() method (line ~114)"
+            before: |
+              output = run_completion_with_feedback(...)
+            after: |
+              # Check if streaming is enabled
+              streaming_config = self._get_streaming_config()
+              if streaming_config and streaming_config.enabled:
+                output = self._run_with_streaming(prompt)
+              else:
+                output = run_completion_with_feedback(...)
+
+          - location: "New method _run_with_streaming"
+            content: |
+              def _run_with_streaming(self, prompt: str) -> str:
+                """
+                Run LLM completion with streaming output.
+
+                Returns:
+                  Complete response text
+                """
+                from rich.console import Console
+                from rich.live import Live
+                from rich.text import Text
+
+                accumulated = []
+
+                def on_chunk(text: str) -> None:
+                  """Handle each streamed chunk."""
+                  accumulated.append(text)
+                  console.print(text, end="", style="bold green")
+
+                try:
+                  # Build prompt and call streaming complete
+                  output = self._registry.complete_streaming(
+                    prompt,
+                    mcp_client=self._mcp_client,
+                    system_prompt=self._selected_system_prompt,
+                    on_chunk=on_chunk,
+                  )
+
+                  console.print()  # Newline after streaming completes
+                  return output
+
+                except KeyboardInterrupt:
+                  # User interrupted; return partial
+                  console.print("\n[yellow][Interrupted][/yellow]")
+                  partial = "".join(accumulated)
+                  if partial:
+                    return partial
+                  raise
+
+          - location: "New method _get_streaming_config"
+            content: |
+              def _get_streaming_config(self) -> Optional[StreamingConfig]:
+                """Get effective streaming configuration."""
+                model = self._registry.current_model
+                return (
+                  model.streaming_override
+                  or self._config.streaming_defaults
+                  or None
+                )
+
+  - id: add_progress_indicators
+    description: >
+      Show rich progress indicators during non-streaming phases.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "During MCP tool calls"
+            wrap_with_status: |
+              from rich.console import Console
+              console = Console()
+
+              # When calling MCP tool
+              with console.status(
+                f"[cyan]Calling {server}:{tool}...[/cyan]",
+                spinner="dots"
+              ):
+                result = self._mcp_client.call_tool(server, tool, params)
+
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "During tool call execution in streaming mode"
+            description: "Pause streaming output, show status, resume after tool completes"
+
+  - id: handle_tool_calls_in_streaming
+    description: >
+      Properly handle function calls that arrive during streaming.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - description: |
+              When streaming with function calling:
+              1. Buffer text chunks until tool_calls delta appears
+              2. Pause on_chunk callbacks
+              3. Execute tool call(s) synchronously
+              4. Inject tool results into messages
+              5. Resume streaming (may require new litellm.completion call)
+              6. Continue until final response with no tool calls
+
+              This is complex; consider simplifying by disabling streaming
+              when function calling is active, or only stream the final
+              response after all tools complete.
+
+            implementation_note: |
+              Hybrid approach:
+              - Non-streaming for tool iterations (show status indicators)
+              - Streaming for final text-only response
+              - Best of both worlds: fast tool feedback + streaming final output
+
+  - id: add_streaming_toggle_command
+    description: >
+      Add /stream command to toggle streaming on/off in planning mode.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "_handle_command method"
+            add: |
+              if cmd == "/stream":
+                self._toggle_streaming(args)
+                return False
+
+          - location: "New method _toggle_streaming"
+            content: |
+              def _toggle_streaming(self, args: List[str]) -> None:
+                """Toggle streaming mode on or off."""
+                config = self._get_streaming_config()
+                if not config:
+                  console.print("[yellow]Streaming not configured.[/yellow]")
+                  return
+
+                if args and args[0].lower() in ("on", "off"):
+                  enable = args[0].lower() == "on"
+                  config.enabled = enable
+                  status = "enabled" if enable else "disabled"
+                  console.print(f"[green]Streaming {status}.[/green]")
+                else:
+                  # Toggle
+                  config.enabled = not config.enabled
+                  status = "enabled" if config.enabled else "disabled"
+                  console.print(f"[green]Streaming {status}.[/green]")
+
+  - id: update_logging_for_streaming
+    description: >
+      Ensure planning logs capture full responses even when streamed.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - description: |
+              The accumulated output from streaming should be logged identically
+              to non-streaming responses. The log writer doesn't need to know
+              about streaming; it just receives the final complete text.
+
+              Ensure _run_with_streaming returns the full text, which is then
+              passed to log_writer.end_turn() as normal.
+
+artifacts:
+  - src/simple_rag_writer/config/models.py
+  - src/simple_rag_writer/llm/registry.py
+  - src/simple_rag_writer/planning/repl.py
+
+testing:
+  unit_tests:
+    - Test chunk accumulation
+    - Test Ctrl+C interruption handling
+    - Test streaming with tool calls (if implemented)
+    - Test config precedence for streaming settings
+
+  integration_tests:
+    - Mock litellm streaming with controlled chunks
+    - Verify complete response assembly
+    - Test interrupt/resume scenarios
+    - Verify logs capture full text
+
+  manual_tests:
+    - Planning mode with streaming enabled, observe real-time output
+    - Test /stream toggle command
+    - Interrupt mid-generation with Ctrl+C
+    - Compare streaming vs non-streaming latency perception
+    - Test with long responses (500+ tokens)
+
+success_criteria:
+  - Streaming output appears in real-time in planning mode
+  - Users can interrupt streaming without crashing session
+  - Logs capture complete responses
+  - Tool calls work correctly (may be non-streamed)
+  - Streaming can be toggled on/off per session
+  - Progress indicators show during tool execution
+
+notes: >
+  Streaming significantly improves perceived responsiveness and user confidence
+  that the system is working. However, it adds complexity around tool calls
+  and error handling. A hybrid approach (non-streaming during tool iterations,
+  streaming for final response) may be the best balance of complexity and UX.
+
+  Consider making this a v2 feature if time is limited, as the core functionality
+  works without streaming. But for production use with end users, streaming is
+  highly desirable.

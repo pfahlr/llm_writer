@@ -1,0 +1,427 @@
+id: 17
+filename: 17_mcp_timeout_and_connection_management.yaml
+title: Add MCP timeout and connection management
+priority: high
+description: >
+  Implement robust timeout handling and connection lifecycle management for MCP
+  servers to prevent hangs, improve reliability, and provide better error recovery.
+
+problem_analysis:
+  current_issues:
+    - No timeout on MCP tool calls (can hang indefinitely)
+    - MCP servers started but never explicitly stopped
+    - No retry logic for transient MCP failures
+    - No connection health checking
+    - Server processes may become zombies if client crashes
+    - No graceful shutdown of MCP servers on exit
+
+  impact:
+    - Planning mode can freeze waiting for MCP response
+    - Server processes accumulate over multiple runs
+    - Users have no visibility into MCP connection status
+    - Debug cycles are painful (must manually kill processes)
+
+dependencies:
+  - 06 (MCP types and normalization)
+  - 09 (Planning REPL)
+  - 11 (MCP prompt policy modes)
+
+goals:
+  - All MCP calls have configurable timeouts
+  - Server connections are lifecycle-managed (start, health check, stop)
+  - Transient failures trigger automatic retries
+  - Graceful shutdown cleanup on CLI exit
+  - Connection status is visible in /sources command
+  - Debugging includes connection diagnostics
+
+changes:
+  - id: add_timeout_config
+    description: >
+      Add timeout configuration to McpServerConfig and global defaults.
+    files:
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - location: "McpServerConfig class"
+            add_fields: |
+              timeout_seconds: Optional[int] = Field(
+                default=30,
+                description="Timeout for tool calls in seconds. None = no timeout."
+              )
+              startup_timeout_seconds: int = Field(
+                default=10,
+                description="Timeout for server startup/initialization."
+              )
+              retry_attempts: int = Field(
+                default=2,
+                description="Number of retry attempts for transient failures."
+              )
+              retry_delay_seconds: float = Field(
+                default=1.0,
+                description="Delay between retry attempts."
+              )
+
+          - location: "AppConfig class"
+            add_fields: |
+              mcp_defaults: Optional[McpDefaultsConfig] = None
+
+          - location: "New class McpDefaultsConfig"
+            content: |
+              class McpDefaultsConfig(BaseModel):
+                """Global defaults for all MCP servers."""
+                timeout_seconds: int = 30
+                startup_timeout_seconds: int = 10
+                retry_attempts: int = 2
+                retry_delay_seconds: float = 1.0
+                health_check_interval_seconds: Optional[int] = None  # Future feature
+
+  - id: implement_timeout_in_mcp_client
+    description: >
+      Add timeout enforcement in McpClient.call_tool using anyio primitives.
+    files:
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "Imports"
+            add: |
+              import anyio
+              import time
+              from typing import Optional
+
+          - location: "call_tool method"
+            before: |
+              def call_tool(self, server_id: str, tool_name: str, params: dict) -> McpToolResult:
+                def _call() -> McpToolResult:
+                  # ... existing implementation ...
+                return anyio.run(_call)
+            after: |
+              def call_tool(
+                self,
+                server_id: str,
+                tool_name: str,
+                params: dict,
+                timeout_seconds: Optional[int] = None,
+              ) -> McpToolResult:
+                """
+                Call an MCP tool with optional timeout.
+
+                Args:
+                  server_id: MCP server identifier
+                  tool_name: Name of the tool to call
+                  params: Tool parameters
+                  timeout_seconds: Override timeout (uses server config if None)
+
+                Raises:
+                  McpToolError: On timeout, connection error, or tool failure
+                """
+                server_config = self._get_server_config(server_id)
+                effective_timeout = timeout_seconds or server_config.timeout_seconds
+
+                async def _call_with_timeout() -> McpToolResult:
+                  if effective_timeout is not None:
+                    with anyio.move_on_after(effective_timeout) as scope:
+                      result = await self._call_internal(server_id, tool_name, params)
+                      return result
+                    if scope.cancelled_caught:
+                      raise McpToolError(
+                        f"MCP tool call timed out after {effective_timeout}s: "
+                        f"{server_id}:{tool_name}",
+                        server_id=server_id,
+                        tool_name=tool_name,
+                      )
+                  else:
+                    return await self._call_internal(server_id, tool_name, params)
+
+                try:
+                  return anyio.run(_call_with_timeout)
+                except anyio.get_cancelled_exc_class():
+                  raise McpToolError(
+                    f"MCP tool call cancelled: {server_id}:{tool_name}",
+                    server_id=server_id,
+                    tool_name=tool_name,
+                  )
+
+          - location: "Refactor existing async logic"
+            description: "Extract current call_tool logic into _call_internal async method"
+
+  - id: add_retry_logic
+    description: >
+      Implement retry wrapper for transient MCP failures.
+    files:
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "New method call_tool_with_retry"
+            content: |
+              def call_tool_with_retry(
+                self,
+                server_id: str,
+                tool_name: str,
+                params: dict,
+                max_attempts: Optional[int] = None,
+              ) -> McpToolResult:
+                """
+                Call MCP tool with automatic retry on transient failures.
+
+                Args:
+                  server_id: MCP server identifier
+                  tool_name: Name of the tool
+                  params: Tool parameters
+                  max_attempts: Override retry attempts (uses server config if None)
+
+                Returns:
+                  McpToolResult on success
+
+                Raises:
+                  McpToolError: After all retry attempts exhausted
+                """
+                server_config = self._get_server_config(server_id)
+                attempts = max_attempts or server_config.retry_attempts or 1
+                delay = server_config.retry_delay_seconds
+
+                last_error = None
+                for attempt in range(1, attempts + 1):
+                  try:
+                    return self.call_tool(server_id, tool_name, params)
+                  except McpToolError as exc:
+                    last_error = exc
+                    # Check if error is retryable (connection, timeout, not validation)
+                    if not self._is_retryable_error(exc):
+                      raise
+                    if attempt < attempts:
+                      time.sleep(delay)
+                      # Optional: exponential backoff
+                      # delay *= 1.5
+                      continue
+                    else:
+                      # Final attempt failed
+                      raise McpToolError(
+                        f"MCP tool call failed after {attempts} attempts: {last_error}",
+                        server_id=server_id,
+                        tool_name=tool_name,
+                      ) from last_error
+
+              def _is_retryable_error(self, error: McpToolError) -> bool:
+                """Determine if an error should trigger retry."""
+                # Retry on timeout, connection errors, server unavailable
+                # Don't retry on validation errors, not found, etc.
+                error_msg = str(error).lower()
+                retryable_patterns = [
+                  "timeout",
+                  "connection",
+                  "unavailable",
+                  "refused",
+                  "closed",
+                ]
+                return any(pattern in error_msg for pattern in retryable_patterns)
+
+  - id: add_connection_lifecycle_management
+    description: >
+      Track server process lifecycle and add cleanup on shutdown.
+    files:
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "McpClient __init__"
+            add_tracking: |
+              self._server_processes: Dict[str, subprocess.Popen] = {}
+              self._server_sessions: Dict[str, ClientSession] = {}
+              # Register cleanup handler
+              import atexit
+              atexit.register(self.shutdown_all_servers)
+
+          - location: "New method shutdown_all_servers"
+            content: |
+              def shutdown_all_servers(self) -> None:
+                """
+                Gracefully shutdown all running MCP servers.
+                Called automatically on program exit via atexit.
+                """
+                for server_id in list(self._server_sessions.keys()):
+                  try:
+                    self.shutdown_server(server_id)
+                  except Exception:  # noqa: BLE001
+                    pass  # Best effort cleanup
+
+              def shutdown_server(self, server_id: str, timeout: int = 5) -> None:
+                """
+                Shutdown a specific MCP server.
+
+                Args:
+                  server_id: Server to shutdown
+                  timeout: Seconds to wait for graceful shutdown
+                """
+                # Close session if exists
+                session = self._server_sessions.pop(server_id, None)
+                if session:
+                  try:
+                    # Async cleanup
+                    async def _cleanup():
+                      await session.__aexit__(None, None, None)
+                    anyio.run(_cleanup)
+                  except Exception:  # noqa: BLE001
+                    pass
+
+                # Terminate process if exists
+                process = self._server_processes.pop(server_id, None)
+                if process:
+                  try:
+                    process.terminate()
+                    process.wait(timeout=timeout)
+                  except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                  except Exception:  # noqa: BLE001
+                    pass
+
+          - location: "Server startup"
+            description: "Track process in _server_processes dict when starting"
+
+  - id: add_connection_status_to_sources_command
+    description: >
+      Show connection status in /sources output.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "_list_sources method"
+            modify_table: |
+              table = Table(title="MCP Servers")
+              table.add_column("Server", style="cyan", no_wrap=True)
+              table.add_column("Status", style="green")  # NEW
+              table.add_column("Tools")
+              table.add_column("Command")
+
+              for server in servers:
+                # Check connection status
+                status = self._get_server_status(server.id)  # NEW
+                tools = self._format_tool_names(server.id) or "—"
+                command_text = " ".join(server.command)
+                table.add_row(server.id, status, tools, command_text)
+
+          - location: "New method _get_server_status"
+            content: |
+              def _get_server_status(self, server_id: str) -> str:
+                """
+                Get human-readable connection status for a server.
+
+                Returns:
+                  String like "✓ Connected", "✗ Not started", "⚠ Timeout"
+                """
+                if not hasattr(self._mcp_client, 'is_connected'):
+                  return "?"
+
+                try:
+                  if self._mcp_client.is_connected(server_id):
+                    return "[green]✓ Connected[/green]"
+                  else:
+                    return "[dim]○ Not started[/dim]"
+                except Exception:  # noqa: BLE001
+                  return "[yellow]⚠ Error[/yellow]"
+
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "New method is_connected"
+            content: |
+              def is_connected(self, server_id: str) -> bool:
+                """Check if a server session is active."""
+                return server_id in self._server_sessions
+
+  - id: add_startup_timeout
+    description: >
+      Enforce timeout on MCP server startup to prevent hanging on bad configs.
+    files:
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - description: "Wrap server startup in timeout using anyio.fail_after"
+            implementation: |
+              async def _start_server_with_timeout(
+                server_id: str,
+                config: McpServerConfig
+              ) -> ClientSession:
+                timeout = config.startup_timeout_seconds
+                async with anyio.fail_after(timeout):
+                  # Existing server startup logic
+                  return session
+
+  - id: add_diagnostics_command
+    description: >
+      Add /mcp-status command to planning REPL for connection diagnostics.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "_handle_command method"
+            add_command: |
+              if cmd == "/mcp-status":
+                self._show_mcp_diagnostics()
+                return False
+
+          - location: "New method _show_mcp_diagnostics"
+            content: |
+              def _show_mcp_diagnostics(self) -> None:
+                """Show detailed MCP connection diagnostics."""
+                if not self._config.mcp_servers:
+                  console.print("[yellow]No MCP servers configured.[/yellow]")
+                  return
+
+                console.print("[bold]MCP Connection Diagnostics[/bold]\n")
+
+                for server in self._config.mcp_servers:
+                  status_parts = [f"[cyan]Server:[/cyan] {server.id}"]
+
+                  # Connection status
+                  connected = self._mcp_client.is_connected(server.id) if hasattr(self._mcp_client, 'is_connected') else None
+                  status_parts.append(
+                    f"  Connected: {'✓ Yes' if connected else '✗ No'}"
+                  )
+
+                  # Configuration
+                  status_parts.append(f"  Timeout: {server.timeout_seconds}s")
+                  status_parts.append(f"  Retry attempts: {server.retry_attempts}")
+                  status_parts.append(f"  Command: {' '.join(server.command)}")
+
+                  # Tool count
+                  try:
+                    tools = self._mcp_client.list_tools(server.id)
+                    status_parts.append(f"  Available tools: {len(tools)}")
+                  except Exception as exc:  # noqa: BLE001
+                    status_parts.append(f"  [yellow]Tools: Error - {exc}[/yellow]")
+
+                  console.print("\n".join(status_parts))
+                  console.print()  # Blank line between servers
+
+          - location: "Banner text in run() method"
+            update: |
+              "/sources shows MCP servers, /mcp-status for diagnostics.\n"
+
+artifacts:
+  - src/simple_rag_writer/config/models.py
+  - src/simple_rag_writer/mcp/client.py
+  - src/simple_rag_writer/planning/repl.py
+
+testing:
+  unit_tests:
+    - Test timeout enforcement with slow mock MCP server
+    - Test retry logic with intermittent failures
+    - Test graceful shutdown cleanup
+    - Test is_connected status checking
+
+  integration_tests:
+    - Start/stop MCP servers programmatically
+    - Verify zombie process cleanup on crash
+    - Test timeout with actual MCP server (sleep tool)
+    - Test retry with flaky network conditions
+
+  manual_tests:
+    - Run planning mode with slow MCP server, verify timeout
+    - Check /mcp-status output with mix of connected/disconnected servers
+    - Verify cleanup on Ctrl+C shutdown
+    - Test with invalid server config (timeout on startup)
+
+success_criteria:
+  - No MCP call hangs indefinitely
+  - Server connections clean up on exit
+  - Transient errors retry automatically
+  - Users can diagnose connection issues via /mcp-status
+  - Timeouts and retries are configurable per-server
+
+notes: >
+  Robust connection management is critical for production use. MCP servers may be
+  external services, local processes, or networked tools - all with varying
+  reliability. This task ensures the writer tool degrades gracefully and provides
+  actionable diagnostics when MCP infrastructure has issues.

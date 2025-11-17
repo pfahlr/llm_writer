@@ -1,0 +1,417 @@
+id: 20
+filename: 20_fix_code_quality_issues.yaml
+title: Fix code quality issues and technical debt
+priority: medium
+description: >
+  Address identified code quality issues including duplicate code, overly broad
+  exception handling, missing type hints, and other technical debt that impacts
+  maintainability and debuggability.
+
+problem_analysis:
+  identified_issues:
+    - Duplicate _save_memory_chunk call in repl.py:590 (called twice)
+    - Broad exception catching with `except Exception` and `# noqa: BLE001`
+    - Missing type hints in several functions
+    - No validation of required fields in some places
+    - Inconsistent error message formatting
+    - Magic numbers (timeouts, limits) scattered in code
+    - Some TODO comments for unimplemented features
+
+  locations:
+    - src/simple_rag_writer/planning/repl.py:590 (duplicate call)
+    - src/simple_rag_writer/mcp/client.py (broad exception handling)
+    - src/simple_rag_writer/llm/registry.py (several bare except blocks)
+    - Multiple files: inconsistent timeout/limit constants
+
+dependencies:
+  - All existing tasks (foundational improvements)
+
+goals:
+  - Remove all duplicate code
+  - Replace broad exception handling with specific catch blocks
+  - Add comprehensive type hints throughout
+  - Extract magic numbers to named constants
+  - Add input validation where missing
+  - Standardize error message formatting
+  - Document complex logic with docstrings
+  - Add logging for debugging
+
+changes:
+  - id: fix_duplicate_save_memory_chunk
+    description: >
+      Remove duplicate _save_memory_chunk call in repl.py
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "line 589-590"
+            before: |
+              self._save_memory_chunk(chunk, chunk_label)
+              self._save_memory_chunk(chunk, chunk_label)
+            after: |
+              self._save_memory_chunk(chunk, chunk_label)
+            fix_type: "bug"
+
+  - id: replace_broad_exception_handling
+    description: >
+      Replace overly broad exception catching with specific types.
+    files:
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "line 407 and similar"
+            before: |
+              except Exception:  # pragma: no cover - depends on MCP implementation
+                return ""
+            after: |
+              except (AttributeError, KeyError, TypeError, ConnectionError) as exc:
+                # Log the specific error for debugging
+                import logging
+                logging.debug(f"Failed to format tool names for {server_id}: {exc}")
+                return ""
+
+          - location: "Throughout file"
+            description: |
+              Replace all `except Exception` with specific exception types:
+              - McpToolError for MCP-specific failures
+              - ConnectionError for network issues
+              - TimeoutError for timeout scenarios
+              - ValueError for validation issues
+              - json.JSONDecodeError for JSON parsing
+
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "line 120-126"
+            before: |
+              except Exception as exc:  # noqa: BLE001
+                if supports_functions and isinstance(exc, getattr(litellm, "BadRequestError", Exception)):
+            after: |
+              except (AttributeError, TypeError, ValueError) as exc:
+                if supports_functions and isinstance(exc, getattr(litellm, "BadRequestError", Exception)):
+
+          - location: "line 173-174"
+            description: "Replace bare except with specific MCP-related exceptions"
+
+  - id: extract_magic_numbers_to_constants
+    description: >
+      Define named constants for timeouts, limits, and other magic numbers.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "Top of file, after imports"
+            add_constants: |
+              # Configuration constants
+              HISTORY_WINDOW = DEFAULT_HISTORY_WINDOW  # Already exists
+              MAX_LLM_COMPLETION_ATTEMPTS = 2  # Already exists
+              MCP_QUERY_HISTORY_LIMIT = 5  # Already exists
+              MAX_MEMORY_SNAPSHOT_CHARS = 4000  # Already exists
+
+              # New constants to extract from code
+              SNIPPET_PREVIEW_LENGTH = 80
+              SNIPPET_TABLE_LENGTH = 96
+              MEMORY_ENTRY_ID_LENGTH = 8
+              URL_PREVIEW_LENGTH = 160
+
+          - location: "Throughout file"
+            description: "Replace hardcoded numbers with named constants"
+            examples:
+              - "snippet[:80] → snippet[:SNIPPET_PREVIEW_LENGTH]"
+              - "text[:96] → text[:SNIPPET_TABLE_LENGTH]"
+              - "preview[:160] → preview[:URL_PREVIEW_LENGTH]"
+
+      - path: src/simple_rag_writer/mcp/prompt_policy.py
+        changes:
+          - location: "Extract default policy values"
+            add_constants: |
+              DEFAULT_RAW_CAPPED_MAX_ITEMS = 3
+              DEFAULT_RAW_CAPPED_MAX_CHARS_PER_ITEM = 800
+              DEFAULT_RAW_CAPPED_MAX_TOTAL_CHARS = 8000
+              DEFAULT_SUMMARY_MAX_ITEMS = 10
+              DEFAULT_SUMMARY_MAX_TOKENS = 512
+
+  - id: add_missing_type_hints
+    description: >
+      Add type hints to all functions missing them.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - description: "Add type hints to helper methods"
+            examples:
+              - "_build_memory_chunk(self, entry: ManualMemoryEntry) -> str:"
+              - "_context_chunk_label(self, batch: Optional[_ResultBatch]) -> Optional[str]:"
+              - "_format_snippet(self, item: NormalizedItem) -> str:"
+
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - description: "Add return type hints to all methods"
+            examples:
+              - "_build_tool_name_list(...) -> List[str]:"
+              - "_render_tool_inventory(...) -> str:"
+              - "_format_schema_fields(...) -> str:"
+
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - description: "Add type hints to internal methods"
+
+  - id: add_input_validation
+    description: >
+      Add validation for required fields and bounds checking.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "_parse_indices method"
+            add_validation: |
+              # After parsing indices
+              if any(idx < -1 for idx in indices):
+                console.print("[yellow]Warning: Negative indices (other than -1) not supported[/yellow]")
+                indices = [idx for idx in indices if idx >= -1]
+
+          - location: "_inject_results method"
+            add_validation: |
+              # Validate batch exists before accessing
+              if not self._last_batch:
+                console.print("[yellow]No reference data available.[/yellow]")
+                return
+              if not self._last_batch.items:
+                console.print("[yellow]Reference batch is empty.[/yellow]")
+                return
+
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - description: "Add Pydantic validators for config fields"
+            examples: |
+              @field_validator('timeout_seconds')
+              @classmethod
+              def validate_timeout(cls, v):
+                if v is not None and v < 0:
+                  raise ValueError("timeout_seconds must be non-negative")
+                return v
+
+  - id: standardize_error_messages
+    description: >
+      Make error messages consistent and actionable.
+    guidelines:
+      format: "[Component] Error description. Suggested action."
+      examples:
+        - "[MCP] Connection to server 'notes' timed out after 30s. Check server is running."
+        - "[LLM] Model returned empty response. Try rephrasing or using different model."
+        - "[Config] Invalid YAML in config.yaml:15. Check syntax near 'models'."
+
+    files:
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "Throughout file"
+            description: "Standardize MCP error messages with [MCP] prefix"
+
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "Throughout file"
+            description: "Standardize LLM error messages with [LLM] prefix"
+
+  - id: add_docstrings_for_complex_logic
+    description: >
+      Add comprehensive docstrings to complex methods.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "complete() method"
+            add_docstring: |
+              """
+              Execute LLM completion with optional MCP tool calling.
+
+              This method handles the full completion lifecycle including:
+              1. System prompt construction (with optional MCP tool definitions)
+              2. Provider-specific configuration (API keys, base URLs)
+              3. Function calling vs textual tool fallback
+              4. Tool iteration loop with max attempts
+              5. Error recovery and retries
+
+              The tool iteration loop supports:
+              - Function calling for providers that support it (OpenAI, Anthropic, Google)
+              - Textual CALL_MCP_TOOL fallback for providers without function calling
+              - Automatic detection and retry on BadRequestError for function calling
+              - Maximum 3 tool iterations to prevent infinite loops
+
+              Args:
+                prompt: User prompt text
+                model_id: Override model (uses current_model if None)
+                task_params: Override generation parameters (temperature, max_tokens, etc.)
+                mcp_client: MCP client for tool calling (required if MCP servers configured)
+                system_prompt: Override system prompt (uses model default if None)
+
+              Returns:
+                Complete LLM response text
+
+              Raises:
+                RuntimeError: If litellm not available, tool iteration limit exceeded,
+                            or model requests tools without MCP client configured
+                McpToolError: If MCP tool call fails
+
+              Example:
+                >>> registry = ModelRegistry(config)
+                >>> response = registry.complete(
+                ...   "Summarize these notes",
+                ...   mcp_client=mcp_client
+                ... )
+              """
+
+      - path: src/simple_rag_writer/mcp/prompt_policy.py
+        changes:
+          - location: "apply_prompt_policy function"
+            add_docstring: |
+              """
+              Transform MCP tool results into LLM-friendly prompt text.
+
+              Implements two modes:
+              1. raw_capped: Truncate items by count and character limits
+                - Slice to max_items_per_reference
+                - Truncate each item to max_chars_per_item
+                - Enforce global max_total_chars budget
+
+              2. summary: Use LLM to summarize large result sets
+                - Slice to max_items_per_reference
+                - Pass full items to summarizer LLM
+                - Control output length with summary_max_tokens
+                - Use type-specific prompts (note, paper, legal_case, etc.)
+
+              Args:
+                normalized_items: List of normalized MCP results
+                config: Application configuration with mcp_prompt_policy settings
+                reference_spec: Optional reference-level overrides
+                registry: Model registry (required for summary mode)
+
+              Returns:
+                Formatted text ready for LLM prompt injection
+
+              Raises:
+                RuntimeError: If summary mode enabled but registry not provided
+
+              Example:
+                >>> items = normalize_payload(mcp_result.payload)
+                >>> text = apply_prompt_policy(items, config, reference, registry)
+                >>> prompt = f"Context:\n{text}\n\nQuery: {user_query}"
+              """
+
+  - id: add_debug_logging
+    description: >
+      Add structured logging throughout for debugging.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "Start of complete() method"
+            add_logging: |
+              import logging
+              logger = logging.getLogger(__name__)
+
+              logger.debug(
+                "Starting completion: model=%s, prompt_len=%d, has_mcp=%s",
+                model.id,
+                len(prompt),
+                mcp_client is not None
+              )
+
+          - location: "Tool call execution"
+            add_logging: |
+              logger.debug(
+                "Executing MCP tool: server=%s, tool=%s, params=%s",
+                server_id, tool_name, params
+              )
+
+          - location: "Tool iteration"
+            add_logging: |
+              logger.debug(
+                "Tool iteration %d/%d complete",
+                attempt, max_tool_iterations
+              )
+
+  - id: add_linting_and_formatting_config
+    description: >
+      Add configuration for automated code quality tools.
+    files:
+      - path: .pylintrc
+        op: create
+        content: |
+          [MASTER]
+          disable=
+            C0111,  # missing-docstring (we'll add these incrementally)
+            R0913,  # too-many-arguments (common in config-heavy code)
+            R0914,  # too-many-locals (acceptable for complex logic)
+
+          [FORMAT]
+          max-line-length=100
+          indent-string='  '  # 2-space indent
+
+      - path: .mypy.ini
+        op: create
+        content: |
+          [mypy]
+          python_version = 3.10
+          warn_return_any = True
+          warn_unused_configs = True
+          disallow_untyped_defs = False  # Incremental typing
+          check_untyped_defs = True
+
+          [mypy-litellm.*]
+          ignore_missing_imports = True
+
+          [mypy-mcp.*]
+          ignore_missing_imports = True
+
+      - path: pyproject.toml
+        changes:
+          - location: "[tool.black]"
+            add: |
+              line-length = 100
+              target-version = ['py310']
+
+  - id: address_todo_comments
+    description: >
+      Review and address or document all TODO comments.
+    files:
+      - path: src/simple_rag_writer/runner/run_tasks.py
+        changes:
+          - description: "Find TODO about outline support, reference task 16"
+          - note: "# TODO: Implement outline loading - See task 16"
+
+      - path: src/simple_rag_writer/mcp/source_browser_app.py
+        changes:
+          - description: "Add note that source browser is future work"
+          - note: "# NOTE: Textual source browser stub - future enhancement"
+
+artifacts:
+  - src/simple_rag_writer/planning/repl.py (fixes)
+  - src/simple_rag_writer/mcp/client.py (exception handling)
+  - src/simple_rag_writer/llm/registry.py (type hints, docstrings, logging)
+  - src/simple_rag_writer/config/models.py (validation)
+  - .pylintrc (new)
+  - .mypy.ini (new)
+
+testing:
+  static_analysis:
+    - Run pylint and address warnings
+    - Run mypy for type checking
+    - Run black for formatting consistency
+
+  unit_tests:
+    - Add tests for input validation
+    - Test error message formatting
+    - Verify constants are used consistently
+
+success_criteria:
+  - No duplicate code
+  - No bare `except Exception` without specific reason
+  - Type hints on all public functions
+  - All magic numbers extracted to constants
+  - Error messages follow standard format
+  - Complex functions have docstrings
+  - Debug logging available throughout
+  - Static analysis tools configured
+
+notes: >
+  Code quality improvements reduce future debugging time and make the codebase
+  more maintainable. This is not glamorous work, but it compounds over time.
+  Incremental improvements are acceptable; perfect is the enemy of done.
+
+estimated_effort:
+  fixing_issues: 4 hours
+  adding_type_hints: 3 hours
+  documentation: 2 hours
+  total: 9 hours

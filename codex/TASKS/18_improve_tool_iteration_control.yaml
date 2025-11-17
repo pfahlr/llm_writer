@@ -1,0 +1,403 @@
+id: 18
+filename: 18_improve_tool_iteration_control.yaml
+title: Improve LLM tool iteration control and configurability
+priority: medium
+description: >
+  Enhance the LLM-MCP tool calling loop with better configurability, smarter
+  iteration limits, user intervention options, and loop detection to prevent
+  models from getting stuck in repetitive tool calls.
+
+problem_analysis:
+  current_state:
+    - Hard-coded max_tool_iterations = 3 (registry.py:110)
+    - No detection of repetitive/identical tool calls
+    - No user option to intervene during tool loops
+    - No cost/token budget awareness in tool iteration
+    - Tool events are logged but not analyzed for patterns
+    - Same iteration limit for all models (some need more, some less)
+
+  pain_points:
+    - 3 iterations may be too few for complex research queries
+    - Models can waste iterations on redundant calls
+    - No way to stop runaway tool calling mid-stream
+    - Token costs accumulate in tool loops with no safeguard
+    - Debugging tool loops requires manual log analysis
+
+dependencies:
+  - 03 (Model Registry)
+  - 15 (Error reporting improvements)
+  - 17 (MCP timeout management)
+
+goals:
+  - Tool iteration limits are configurable per-model and per-task
+  - Redundant tool call detection with automatic intervention
+  - Optional user confirmation for tool calls in planning mode
+  - Token budget tracking and enforcement
+  - Clear visibility into tool call history during iteration
+  - Smarter iteration strategies (escalating delay, result quality checking)
+
+changes:
+  - id: add_tool_iteration_config
+    description: >
+      Make tool iteration limits configurable at multiple levels.
+    files:
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - location: "AppConfig class"
+            add_fields: |
+              tool_iteration_defaults: Optional[ToolIterationConfig] = None
+
+          - location: "ModelConfig class"
+            add_fields: |
+              tool_iteration_override: Optional[ToolIterationConfig] = None
+
+          - location: "New class ToolIterationConfig"
+            content: |
+              class ToolIterationConfig(BaseModel):
+                """Configuration for LLM tool calling iteration behavior."""
+                max_iterations: int = Field(
+                  default=3,
+                  ge=1,
+                  le=20,
+                  description="Maximum tool calls per completion"
+                )
+                detect_loops: bool = Field(
+                  default=True,
+                  description="Detect and prevent identical repeated tool calls"
+                )
+                loop_window: int = Field(
+                  default=2,
+                  description="Number of recent calls to check for loops"
+                )
+                require_user_confirmation: bool = Field(
+                  default=False,
+                  description="Ask user before executing each tool call (planning mode only)"
+                )
+                token_budget: Optional[int] = Field(
+                  default=None,
+                  description="Stop iteration if cumulative tokens exceed budget"
+                )
+                escalating_delay: bool = Field(
+                  default=False,
+                  description="Add small delays between iterations to rate-limit"
+                )
+                delay_seconds: float = Field(
+                  default=0.5,
+                  description="Base delay between tool calls if escalating_delay enabled"
+                )
+
+      - path: src/simple_rag_writer/tasks/models.py
+        changes:
+          - location: "TaskSpec class"
+            add_fields: |
+              tool_iteration_override: Optional[ToolIterationConfig] = Field(
+                default=None,
+                description="Override tool iteration config for this specific task"
+              )
+
+  - id: implement_loop_detection
+    description: >
+      Detect when model repeatedly calls the same tool with identical params.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "Class variables"
+            add: |
+              self._tool_call_history: List[Tuple[str, str, Dict[str, Any]]] = []
+
+          - location: "After successful tool call (line ~140)"
+            add_check: |
+              # Record this tool call
+              call_signature = (server_id, tool_name, json.dumps(params, sort_keys=True))
+              self._tool_call_history.append(call_signature)
+
+              # Check for loops if enabled
+              if self._should_detect_loops():
+                if self._is_loop_detected(call_signature):
+                  raise RuntimeError(
+                    f"Tool call loop detected: {server_id}:{tool_name} called repeatedly "
+                    f"with identical parameters. The model may be stuck. "
+                    f"Try rephrasing your request or reducing complexity."
+                  )
+
+          - location: "New methods"
+            content: |
+              def _should_detect_loops(self) -> bool:
+                """Check if loop detection is enabled for current model."""
+                config = self._get_tool_iteration_config()
+                return config.detect_loops if config else True
+
+              def _get_tool_iteration_config(self) -> Optional[ToolIterationConfig]:
+                """Get effective tool iteration config for current model."""
+                model = self.current_model
+                # Priority: model override > app defaults > built-in defaults
+                return (
+                  model.tool_iteration_override
+                  or self._config.tool_iteration_defaults
+                  or None  # Will use hardcoded defaults
+                )
+
+              def _is_loop_detected(
+                self,
+                current_call: Tuple[str, str, str],  # (server, tool, json_params)
+              ) -> bool:
+                """
+                Check if current call matches recent history (loop detection).
+
+                A loop is detected if the same (server, tool, params) appears
+                multiple times within the loop_window.
+                """
+                config = self._get_tool_iteration_config()
+                window = config.loop_window if config else 2
+
+                # Check last N calls
+                recent = self._tool_call_history[-window:]
+                matches = [call for call in recent if call == current_call]
+
+                # If we've seen this exact call 2+ times in window, it's a loop
+                return len(matches) >= 2
+
+  - id: add_user_confirmation_mode
+    description: >
+      In planning mode, optionally prompt user before executing each tool call.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "complete() method signature"
+            add_parameter: |
+              interactive_mode: bool = False,
+              on_tool_call_requested: Optional[Callable[[str, str, Dict], bool]] = None,
+
+          - location: "Before executing tool call (line ~136-137)"
+            add_confirmation: |
+              # If interactive mode, ask for confirmation
+              if interactive_mode and on_tool_call_requested:
+                confirmed = on_tool_call_requested(server_id, tool_name, params)
+                if not confirmed:
+                  # User declined; return what we have so far or raise
+                  if text_output:
+                    return text_output
+                  else:
+                    raise RuntimeError(
+                      "Tool call declined by user. No response available."
+                    )
+
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "run_completion_with_feedback call (line ~114)"
+            modification: |
+              # Add interactive callback if confirmation mode enabled
+              needs_confirmation = self._should_confirm_tool_calls()
+
+              output = run_completion_with_feedback(
+                self._registry,
+                prompt,
+                mcp_client=self._mcp_client,
+                system_prompt=self._selected_system_prompt,
+                max_attempts=MAX_LLM_COMPLETION_ATTEMPTS,
+                on_attempt_failure=partial(
+                  self._report_retry_attempt, MAX_LLM_COMPLETION_ATTEMPTS
+                ),
+                interactive_mode=needs_confirmation,  # NEW
+                on_tool_call_requested=self._confirm_tool_call if needs_confirmation else None,  # NEW
+              )
+
+          - location: "New method _confirm_tool_call"
+            content: |
+              def _confirm_tool_call(
+                self, server_id: str, tool_name: str, params: Dict[str, Any]
+              ) -> bool:
+                """
+                Prompt user to confirm tool call before execution.
+
+                Returns:
+                  True if user approves, False if declined
+                """
+                param_summary = json.dumps(params, indent=2)
+                message = (
+                  f"[yellow]Model wants to call:[/yellow]\n"
+                  f"  Server: {server_id}\n"
+                  f"  Tool: {tool_name}\n"
+                  f"  Params:\n{param_summary}\n"
+                  f"[yellow]Proceed? (y/N):[/yellow] "
+                )
+                console.print(message, end="")
+                try:
+                  response = input().strip().lower()
+                  return response in ("y", "yes")
+                except (EOFError, KeyboardInterrupt):
+                  return False
+
+          - location: "New method _should_confirm_tool_calls"
+            content: |
+              def _should_confirm_tool_calls(self) -> bool:
+                """Check if user confirmation is required for tool calls."""
+                config = self._registry._get_tool_iteration_config()
+                return config.require_user_confirmation if config else False
+
+          - location: "Add command /tool-confirm toggle"
+            description: "Add command to toggle require_user_confirmation on/off"
+            implementation: |
+              if cmd == "/tool-confirm":
+                self._toggle_tool_confirmation()
+                return False
+
+              def _toggle_tool_confirmation(self) -> None:
+                # Toggle the setting and notify user
+                ...
+
+  - id: add_token_budget_tracking
+    description: >
+      Track cumulative tokens used in tool iteration and stop if budget exceeded.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "complete() method"
+            add_tracking: |
+              cumulative_tokens = 0
+              tool_config = self._get_tool_iteration_config()
+              token_budget = tool_config.token_budget if tool_config else None
+
+          - location: "After each LLM response"
+            add_accounting: |
+              # Track token usage from response
+              usage = getattr(response, 'usage', None)
+              if usage and token_budget:
+                response_tokens = getattr(usage, 'total_tokens', 0)
+                cumulative_tokens += response_tokens
+
+                if cumulative_tokens > token_budget:
+                  raise RuntimeError(
+                    f"Token budget exceeded ({cumulative_tokens}/{token_budget}) "
+                    f"during tool iteration. Stopping to prevent runaway costs."
+                  )
+
+  - id: add_escalating_delay
+    description: >
+      Add configurable delays between tool calls to rate-limit aggressive models.
+    files:
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "Before each tool call iteration"
+            add_delay: |
+              tool_config = self._get_tool_iteration_config()
+              if tool_config and tool_config.escalating_delay and attempt > 0:
+                import time
+                delay = tool_config.delay_seconds * attempt
+                time.sleep(delay)
+
+  - id: add_tool_history_visibility
+    description: >
+      Show tool call history in planning mode during iteration.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "After tool events display (line ~132)"
+            add: |
+              # Show tool call sequence if multiple iterations occurred
+              tool_history = self._registry.get_tool_call_history()
+              if len(tool_history) > 1:
+                history_summary = "\n".join(
+                  f"  {i+1}. {server}:{tool}" for i, (server, tool, _) in enumerate(tool_history)
+                )
+                console.print(
+                  Panel(
+                    history_summary,
+                    title=f"Tool Call Sequence ({len(tool_history)} calls)",
+                    border_style="dim"
+                  )
+                )
+
+      - path: src/simple_rag_writer/llm/registry.py
+        changes:
+          - location: "New method get_tool_call_history"
+            content: |
+              def get_tool_call_history(self) -> List[Tuple[str, str, Dict[str, Any]]]:
+                """Return recent tool call history for this completion."""
+                return [(server, tool, json.loads(params_json))
+                        for server, tool, params_json in self._tool_call_history]
+
+              def clear_tool_call_history(self) -> None:
+                """Clear tool call history (called at start of new completion)."""
+                self._tool_call_history.clear()
+
+          - location: "Start of complete() method"
+            add: |
+              self.clear_tool_call_history()
+
+  - id: add_example_config
+    description: >
+      Provide example configurations showing tool iteration customization.
+    files:
+      - path: examples/config_tool_iteration.yaml
+        op: create
+        content: |
+          # Example: Tool iteration control configuration
+
+          # Global defaults for all models
+          tool_iteration_defaults:
+            max_iterations: 5
+            detect_loops: true
+            loop_window: 3
+            require_user_confirmation: false  # Set true for interactive approval
+            token_budget: 50000  # Stop if cumulative tokens exceed this
+            escalating_delay: false
+            delay_seconds: 1.0
+
+          models:
+            - id: "openai:gpt-4.1-mini"
+              provider: "openai"
+              model_name: "gpt-4.1-mini"
+              # Override for this model: allow more iterations
+              tool_iteration_override:
+                max_iterations: 10
+                detect_loops: true
+                token_budget: 100000
+
+            - id: "claude:sonnet"
+              provider: "anthropic"
+              model_name: "claude-sonnet-4"
+              # This model is aggressive with tools; add delays
+              tool_iteration_override:
+                max_iterations: 6
+                escalating_delay: true
+                delay_seconds: 0.8
+
+artifacts:
+  - src/simple_rag_writer/config/models.py
+  - src/simple_rag_writer/llm/registry.py
+  - src/simple_rag_writer/planning/repl.py
+  - src/simple_rag_writer/tasks/models.py
+  - examples/config_tool_iteration.yaml
+
+testing:
+  unit_tests:
+    - Test loop detection with repeated identical calls
+    - Test token budget enforcement
+    - Test escalating delay timing
+    - Test config precedence (task > model > app > default)
+
+  integration_tests:
+    - Mock model that loops on same tool call
+    - Verify user confirmation prompts appear
+    - Test budget exceeded mid-iteration
+    - Verify delays are applied correctly
+
+  manual_tests:
+    - Planning mode with require_user_confirmation: true
+    - Test loop detection with actual MCP server
+    - Monitor token usage with budget enforcement
+    - Observe tool call history display
+
+success_criteria:
+  - Tool iteration is configurable at multiple levels
+  - Loops are detected and prevented automatically
+  - Users can intervene in tool calling when desired
+  - Token budgets prevent runaway costs
+  - Tool call history is visible for debugging
+
+notes: >
+  Advanced tool iteration control is essential for production use with variable
+  model behaviors. Some models are conservative with tools (need higher limits),
+  others are aggressive (need rate limiting and loop detection). This task makes
+  the system adaptable to different model personalities and use cases.

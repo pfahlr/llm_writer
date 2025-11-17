@@ -1,0 +1,539 @@
+id: 22
+filename: 22_graceful_degradation_for_mcp_failures.yaml
+title: Implement graceful degradation for MCP failures
+priority: high
+description: >
+  Ensure the system continues to function when MCP servers are unavailable,
+  misconfigured, or failing, with clear communication to users about degraded
+  functionality and fallback options.
+
+problem_analysis:
+  brittleness:
+    - System assumes MCP servers will always be available
+    - No fallback when MCP tools fail
+    - Planning mode may become unusable if key servers are down
+    - Task execution fails completely on MCP errors (unless mcp_error_mode set)
+    - No health checking before relying on MCP
+
+  user_impact:
+    - Cannot use planning mode if notes server is misconfigured
+    - Tasks fail entirely when reference retrieval fails
+    - No way to skip optional MCP references interactively
+    - Unclear which MCP servers are required vs optional
+
+dependencies:
+  - 06 (MCP types and normalization)
+  - 09 (Planning REPL)
+  - 17 (MCP timeout and connection management)
+
+goals:
+  - Core functionality works without MCP
+  - Optional vs required MCP servers clearly distinguished
+  - Users can skip failed MCP references interactively
+  - Planning mode continues even if MCP unavailable
+  - Clear status indicators for MCP health
+  - Automatic fallback to cached/previous results
+
+design_approach:
+  server_criticality:
+    required: "System fails if unavailable"
+    optional: "Degraded experience, continue with warning"
+    best_effort: "Try once, skip on failure without warning"
+
+  failure_modes:
+    - Server not responding (connection refused)
+    - Server slow (timeout)
+    - Tool not found (invalid config)
+    - Tool error (bad parameters)
+    - Empty results (no matches)
+
+  degradation_strategies:
+    - Skip optional references with warning
+    - Use cached results if available
+    - Offer manual URL entry as fallback
+    - Continue with reduced context
+    - Prompt user to continue or abort
+
+changes:
+  - id: add_server_criticality_config
+    description: >
+      Allow marking MCP servers as required, optional, or best-effort.
+    files:
+      - path: src/simple_rag_writer/config/models.py
+        changes:
+          - location: "McpServerConfig class"
+            add_field: |
+              criticality: str = Field(
+                default="optional",
+                description="Server criticality: required, optional, or best_effort"
+              )
+
+              @field_validator('criticality')
+              @classmethod
+              def validate_criticality(cls, v: str) -> str:
+                valid = {"required", "optional", "best_effort"}
+                if v not in valid:
+                  raise ValueError(f"criticality must be one of {valid}")
+                return v
+
+  - id: implement_required_server_checking
+    description: >
+      Check required servers before entering planning mode or running tasks.
+    files:
+      - path: src/simple_rag_writer/mcp/health.py
+        op: create
+        content: |
+          from __future__ import annotations
+          from dataclasses import dataclass
+          from typing import Dict, List, Optional
+          from simple_rag_writer.config.models import AppConfig, McpServerConfig
+          from simple_rag_writer.mcp.client import McpClient
+
+
+          @dataclass
+          class ServerHealthStatus:
+            """Health check result for an MCP server."""
+            server_id: str
+            available: bool
+            error: Optional[str] = None
+            tool_count: int = 0
+            response_time_ms: Optional[float] = None
+
+
+          def check_server_health(
+            mcp_client: McpClient, server_id: str, timeout: float = 5.0
+          ) -> ServerHealthStatus:
+            """
+            Check if an MCP server is healthy.
+
+            Returns:
+              ServerHealthStatus with availability and metrics
+            """
+            import time
+            start = time.time()
+
+            try:
+              # Try listing tools as health check
+              tools = mcp_client.list_tools(server_id)
+              elapsed_ms = (time.time() - start) * 1000
+
+              return ServerHealthStatus(
+                server_id=server_id,
+                available=True,
+                tool_count=len(tools) if tools else 0,
+                response_time_ms=elapsed_ms,
+              )
+            except Exception as exc:  # noqa: BLE001
+              return ServerHealthStatus(
+                server_id=server_id,
+                available=False,
+                error=str(exc),
+              )
+
+
+          def check_required_servers(
+            config: AppConfig, mcp_client: McpClient
+          ) -> tuple[bool, List[ServerHealthStatus]]:
+            """
+            Check health of all required MCP servers.
+
+            Returns:
+              (all_required_ok, list of health statuses)
+            """
+            statuses = []
+            all_ok = True
+
+            for server in config.mcp_servers or []:
+              status = check_server_health(mcp_client, server.id)
+              statuses.append(status)
+
+              if server.criticality == "required" and not status.available:
+                all_ok = False
+
+            return all_ok, statuses
+
+      - path: src/simple_rag_writer/cli/plan.py
+        changes:
+          - location: "Before entering REPL"
+            add_health_check: |
+              from simple_rag_writer.mcp.health import check_required_servers
+
+              # Check required MCP servers
+              all_ok, statuses = check_required_servers(config, mcp_client)
+
+              if not all_ok:
+                from rich.console import Console
+                from rich.table import Table
+
+                console = Console()
+                console.print("[yellow]Warning: Some required MCP servers are unavailable:[/yellow]")
+
+                table = Table()
+                table.add_column("Server", style="cyan")
+                table.add_column("Status")
+                table.add_column("Error")
+
+                for status in statuses:
+                  server_cfg = next(
+                    s for s in config.mcp_servers if s.id == status.server_id
+                  )
+                  if server_cfg.criticality == "required" and not status.available:
+                    table.add_row(
+                      status.server_id,
+                      "[red]Unavailable[/red]",
+                      status.error or "Unknown error",
+                    )
+
+                console.print(table)
+                console.print("\n[yellow]Continue anyway? (y/N):[/yellow] ", end="")
+                response = input().strip().lower()
+                if response not in ("y", "yes"):
+                  console.print("[red]Aborting due to unavailable required servers.[/red]")
+                  return 1
+
+  - id: add_fallback_for_mcp_errors
+    description: >
+      Gracefully handle MCP errors during task execution and planning.
+    files:
+      - path: src/simple_rag_writer/runner/run_tasks.py
+        changes:
+          - location: "MCP reference resolution"
+            enhance_error_handling: |
+              # Current behavior on MCP error:
+              #   - If mcp_error_mode == "fail_task": abort task
+              #   - If mcp_error_mode == "skip_with_warning": skip reference
+
+              # Enhancement: Check server criticality
+              server_config = next(
+                (s for s in config.mcp_servers if s.id == ref.server), None
+              )
+
+              if server_config:
+                if server_config.criticality == "required":
+                  # Required server failed - abort
+                  raise McpToolError(
+                    f"Required MCP server '{ref.server}' failed. Cannot proceed."
+                  )
+                elif server_config.criticality == "best_effort":
+                  # Best effort - skip silently
+                  logger.debug(
+                    "Best-effort MCP server '%s' failed, skipping reference",
+                    ref.server
+                  )
+                  continue
+                else:  # optional
+                  # Log warning and continue
+                  console.print(
+                    f"[yellow]Warning: Optional MCP reference '{ref.label or ref.server}' "
+                    f"failed: {exc}[/yellow]"
+                  )
+                  continue
+
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "_run_mcp_tool method error handling"
+            enhance: |
+              except Exception as exc:  # noqa: BLE001
+                server_config = next(
+                  (s for s in self._config.mcp_servers if s.id == server), None
+                )
+
+                error_msg = f"[red]MCP error:[/red] {exc}"
+
+                if server_config and server_config.criticality == "required":
+                  # Critical error - show prominently
+                  console.print(
+                    Panel(
+                      f"{error_msg}\n\n"
+                      f"This is a required server. Planning may be degraded.",
+                      title="Critical MCP Failure",
+                      border_style="red",
+                    )
+                  )
+                else:
+                  # Non-critical - simple warning
+                  console.print(error_msg)
+
+                # Offer fallback options
+                console.print(
+                  "[yellow]Options:[/yellow]\n"
+                  "  1. Continue without this reference\n"
+                  "  2. Try /url to fetch content manually\n"
+                  "  3. Check server status with /mcp-status"
+                )
+
+                return
+
+  - id: add_mcp_result_caching
+    description: >
+      Cache MCP results to enable fallback on transient failures.
+    files:
+      - path: src/simple_rag_writer/mcp/cache.py
+        op: create
+        content: |
+          from __future__ import annotations
+          import json
+          import time
+          from pathlib import Path
+          from typing import Dict, Optional
+          from simple_rag_writer.mcp.types import McpToolResult
+
+
+          class McpResultCache:
+            """
+            Simple file-based cache for MCP tool results.
+
+            Enables fallback to previous results when servers are unavailable.
+            """
+            def __init__(self, cache_dir: Path, ttl_seconds: int = 3600):
+              self.cache_dir = cache_dir
+              self.ttl_seconds = ttl_seconds
+              self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+            def _cache_key(self, server: str, tool: str, params: Dict) -> str:
+              """Generate cache key from call signature."""
+              import hashlib
+              signature = json.dumps(
+                {"server": server, "tool": tool, "params": params}, sort_keys=True
+              )
+              return hashlib.sha256(signature.encode()).hexdigest()[:16]
+
+            def get(
+              self, server: str, tool: str, params: Dict
+            ) -> Optional[McpToolResult]:
+              """
+              Retrieve cached result if available and fresh.
+
+              Returns:
+                Cached McpToolResult or None if not found/expired
+              """
+              key = self._cache_key(server, tool, params)
+              cache_file = self.cache_dir / f"{key}.json"
+
+              if not cache_file.exists():
+                return None
+
+              try:
+                with cache_file.open("r") as f:
+                  data = json.load(f)
+
+                # Check TTL
+                cached_at = data.get("cached_at", 0)
+                age = time.time() - cached_at
+                if age > self.ttl_seconds:
+                  # Expired
+                  cache_file.unlink()
+                  return None
+
+                return McpToolResult(
+                  server_id=data["server_id"],
+                  tool_name=data["tool_name"],
+                  payload=data["payload"],
+                )
+              except Exception:  # noqa: BLE001
+                return None
+
+            def put(
+              self, server: str, tool: str, params: Dict, result: McpToolResult
+            ) -> None:
+              """Cache a successful MCP result."""
+              key = self._cache_key(server, tool, params)
+              cache_file = self.cache_dir / f"{key}.json"
+
+              data = {
+                "server_id": result.server_id,
+                "tool_name": result.tool_name,
+                "payload": result.payload,
+                "cached_at": time.time(),
+              }
+
+              try:
+                with cache_file.open("w") as f:
+                  json.dump(data, f, indent=2)
+              except Exception:  # noqa: BLE001
+                pass  # Cache write failure is non-critical
+
+      - path: src/simple_rag_writer/mcp/client.py
+        changes:
+          - location: "McpClient initialization"
+            add: |
+              from .cache import McpResultCache
+              self._cache = McpResultCache(Path("logs/mcp_cache"), ttl_seconds=3600)
+
+          - location: "call_tool method"
+            add_caching: |
+              # Try cache first for optional/best-effort servers
+              server_config = self._get_server_config(server_id)
+              if server_config.criticality in ("optional", "best_effort"):
+                cached = self._cache.get(server_id, tool_name, params)
+                if cached:
+                  logger.debug("Using cached MCP result: %s:%s", server_id, tool_name)
+                  return cached
+
+              try:
+                result = self._call_internal(...)  # Actual call
+                # Cache successful result
+                self._cache.put(server_id, tool_name, params, result)
+                return result
+              except Exception as exc:
+                # On failure, try returning stale cache as last resort
+                cached = self._cache.get(server_id, tool_name, params)
+                if cached:
+                  logger.warning(
+                    "MCP call failed, using stale cache: %s:%s - %s",
+                    server_id, tool_name, exc
+                  )
+                  return cached
+                raise
+
+  - id: add_manual_fallback_option
+    description: >
+      Allow users to manually provide context when MCP fails.
+    files:
+      - path: src/simple_rag_writer/planning/repl.py
+        changes:
+          - location: "Add /paste command for manual context injection"
+            new_command: |
+              if cmd == "/paste":
+                self._paste_manual_context(args)
+                return False
+
+          - location: "New method _paste_manual_context"
+            content: |
+              def _paste_manual_context(self, args: List[str]) -> None:
+                """
+                Allow user to paste multi-line context manually.
+
+                Useful when MCP servers are unavailable.
+                """
+                label = " ".join(args).strip() or "Manual context"
+
+                console.print(
+                  f"[yellow]Paste or type context for '{label}'.[/yellow]\n"
+                  "[dim]End with a line containing only '###' or press Ctrl+D[/dim]\n"
+                )
+
+                lines = []
+                while True:
+                  try:
+                    line = console.input()
+                    if line.strip() == "###":
+                      break
+                    lines.append(line)
+                  except (EOFError, KeyboardInterrupt):
+                    break
+
+                if not lines:
+                  console.print("[yellow]No context provided.[/yellow]")
+                  return
+
+                context_text = "\n".join(lines).strip()
+                chunk = f"### {label}\n{context_text}"
+
+                self._context_chunks.append(chunk)
+                self._mcp_context = "\n\n".join(self._context_chunks).strip()
+
+                console.print(
+                  f"[green]Added {len(lines)} lines of manual context as '{label}'.[/green]"
+                )
+
+  - id: update_documentation
+    description: >
+      Document degradation behavior and MCP server criticality.
+    files:
+      - path: docs/mcp_resilience.md
+        op: create
+        content: |
+          # MCP Resilience and Graceful Degradation
+
+          ## Server Criticality Levels
+
+          MCP servers can be marked with three criticality levels:
+
+          ### Required
+          - System will not start if server is unavailable
+          - User must fix configuration or disable server
+          - Use for core functionality servers
+
+          ### Optional (default)
+          - System starts even if unavailable
+          - Warnings shown when server fails
+          - Degraded experience but core functions work
+          - Use for enhancement servers (notes, papers, web search)
+
+          ### Best Effort
+          - Silent failure on unavailability
+          - No warnings to user
+          - Use for experimental or low-value servers
+
+          ## Configuration Example
+
+          ```yaml
+          mcp_servers:
+            - id: "notes"
+              command: ["mcp-notes-server"]
+              criticality: "optional"  # Can continue without it
+
+            - id: "legal_research"
+              command: ["legal-mcp"]
+              criticality: "required"  # Must be available
+
+            - id: "experimental"
+              command: ["experimental-mcp"]
+              criticality: "best_effort"  # Try once, ignore failures
+          ```
+
+          ## Fallback Mechanisms
+
+          1. **Result Caching**: Recent MCP results cached for 1 hour
+          2. **Stale Cache**: On failure, use stale cache if available
+          3. **Manual Input**: Use /paste to provide context manually
+          4. **URL Fallback**: Use /url to fetch web content directly
+
+          ## Health Checking
+
+          Before planning or task execution, required servers are checked:
+
+          - If required servers unavailable: prompt user to continue or abort
+          - If optional servers unavailable: proceed with warning
+          - Use /mcp-status to diagnose connection issues
+
+artifacts:
+  - src/simple_rag_writer/config/models.py
+  - src/simple_rag_writer/mcp/health.py (new)
+  - src/simple_rag_writer/mcp/cache.py (new)
+  - src/simple_rag_writer/mcp/client.py
+  - src/simple_rag_writer/planning/repl.py
+  - src/simple_rag_writer/runner/run_tasks.py
+  - docs/mcp_resilience.md (new)
+
+testing:
+  unit_tests:
+    - Test server health checking
+    - Test cache get/put/expire
+    - Test criticality logic
+
+  integration_tests:
+    - Mock unavailable MCP server
+    - Verify optional server skipped gracefully
+    - Verify required server blocks startup
+    - Test stale cache fallback
+
+  manual_tests:
+    - Disable notes server, verify planning still works
+    - Mark server as required, verify startup blocks
+    - Test /paste command for manual context
+    - Verify cache fallback on transient failure
+
+success_criteria:
+  - Core functionality works without MCP
+  - Clear distinction between required/optional servers
+  - Users informed of degraded functionality
+  - Cached results used as fallback
+  - Manual workarounds available (/paste, /url)
+
+notes: >
+  MCP is powerful but introduces external dependencies. Graceful degradation
+  ensures the tool remains usable even when those dependencies fail. This is
+  essential for reliability in production environments where network issues,
+  server restarts, and misconfigurations are inevitable.

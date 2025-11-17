@@ -1,0 +1,440 @@
+id: 16
+filename: 16_implement_outline_context_support.yaml
+title: Implement outline and context support for multi-chapter writing
+priority: high
+description: >
+  Implement the outline/context system described in master_spec.yaml but currently
+  marked as TODO in the codebase. This enables writers to maintain a book or
+  multi-part work outline and automatically inject relevant structural context
+  into individual task prompts.
+
+status:
+  current: >
+    ContextSpec is defined in tasks/models.py with outline_path and outline_id
+    fields, but the runner completely ignores them (see runner/run_tasks.py).
+    The outline_schema is fully specified in master_spec.yaml but has no
+    implementation.
+
+  spec_reference:
+    - master_spec.yaml:592-637 (outline_schema definition)
+    - master_spec.yaml:430-446 (TaskSpec.context field)
+    - master_spec.yaml:796-837 (data_flow.automated_mode mentions outline snippet)
+
+dependencies:
+  - 04 (Task spec and loader)
+  - 07 (Automated task runner)
+
+goals:
+  - Writers can define a book/article outline in YAML with nested structure
+  - Task prompts automatically include contextual siblings/parent sections
+  - Outline provides narrative flow guidance for individual chapters
+  - Context injection is configurable (full outline vs. local vicinity)
+
+outline_schema:
+  file_pattern: "*.outline.yaml" or "outline.yaml"
+  structure:
+    root_fields:
+      - id: string (unique identifier for the work)
+      - title: string (work title)
+      - parts: list<Part> (major sections/acts/parts)
+
+    Part:
+      - id: string
+      - title: string
+      - summary: optional string
+      - sections: list<Section>
+
+    Section:
+      - id: string (matches TaskSpec.context.outline_id)
+      - title: string
+      - summary: string (injected into task prompts)
+      - subsections: optional list<Section> (recursive)
+
+  example:
+    id: "book1"
+    title: "Our Case Against The Machine"
+    parts:
+      - id: "pt1"
+        title: "Before"
+        summary: "Life before the system intervened"
+        sections:
+          - id: "book1-ch01"
+            title: "The First Shock"
+            summary: "Where everything seemed normal until it didn't."
+          - id: "book1-ch02"
+            title: "The Call"
+            summary: "CPS enters the scene."
+      - id: "pt2"
+        title: "During"
+        summary: "Navigating the bureaucratic maze"
+        sections:
+          - id: "book1-ch03"
+            title: "The Plan"
+            summary: "Case plans, hoops, and moving targets."
+
+changes:
+  - id: create_outline_models
+    description: >
+      Add Pydantic models for outline schema in tasks/models.py or new
+      outline/models.py module.
+    files:
+      - path: src/simple_rag_writer/tasks/outline_models.py
+        op: create
+        content: |
+          from __future__ import annotations
+          from typing import List, Optional
+          from pydantic import BaseModel, Field
+
+
+          class Section(BaseModel):
+            """Represents a chapter or section in the outline."""
+            id: str = Field(..., description="Unique section ID matching TaskSpec.context.outline_id")
+            title: str
+            summary: str = Field(..., description="Summary injected into prompts")
+            subsections: Optional[List[Section]] = None
+
+            class Config:
+              # Enable recursive types for nested subsections
+              arbitrary_types_allowed = True
+
+
+          class Part(BaseModel):
+            """Major division of the work (part, act, book)."""
+            id: str
+            title: str
+            summary: Optional[str] = None
+            sections: List[Section] = Field(default_factory=list)
+
+
+          class Outline(BaseModel):
+            """Root outline structure for a multi-part work."""
+            id: str = Field(..., description="Identifier for the work")
+            title: str
+            parts: List[Part] = Field(default_factory=list)
+
+            def find_section(self, section_id: str) -> Optional[Section]:
+              """Find a section by ID anywhere in the outline tree."""
+              for part in self.parts:
+                for section in part.sections:
+                  if section.id == section_id:
+                    return section
+                  # Check subsections recursively
+                  found = self._find_in_subsections(section, section_id)
+                  if found:
+                    return found
+              return None
+
+            def _find_in_subsections(self, section: Section, section_id: str) -> Optional[Section]:
+              """Recursively search subsections."""
+              if not section.subsections:
+                return None
+              for subsection in section.subsections:
+                if subsection.id == section_id:
+                  return subsection
+                found = self._find_in_subsections(subsection, section_id)
+                if found:
+                  return found
+              return None
+
+            def get_context_for_section(
+              self, section_id: str, include_siblings: bool = True
+            ) -> Optional[dict]:
+              """
+              Build context dictionary for a section including:
+              - Part info (where this section lives)
+              - Section summary
+              - Sibling sections (previous/next chapters)
+              - Parent section if nested
+              """
+              section = self.find_section(section_id)
+              if not section:
+                return None
+
+              # Find the part containing this section
+              containing_part = None
+              siblings = []
+              for part in self.parts:
+                if section in part.sections:
+                  containing_part = part
+                  siblings = part.sections if include_siblings else []
+                  break
+
+              # Build context
+              context = {
+                "section": {
+                  "id": section.id,
+                  "title": section.title,
+                  "summary": section.summary,
+                },
+                "part": {
+                  "id": containing_part.id if containing_part else None,
+                  "title": containing_part.title if containing_part else None,
+                  "summary": containing_part.summary if containing_part else None,
+                },
+              }
+
+              if include_siblings and siblings:
+                idx = siblings.index(section)
+                context["previous_section"] = (
+                  {"id": siblings[idx - 1].id, "title": siblings[idx - 1].title}
+                  if idx > 0
+                  else None
+                )
+                context["next_section"] = (
+                  {"id": siblings[idx + 1].id, "title": siblings[idx + 1].title}
+                  if idx < len(siblings) - 1
+                  else None
+                )
+                context["sibling_sections"] = [
+                  {"id": s.id, "title": s.title, "summary": s.summary} for s in siblings
+                ]
+
+              return context
+
+  - id: create_outline_loader
+    description: >
+      Add loader function to parse outline YAML files into Outline models.
+    files:
+      - path: src/simple_rag_writer/tasks/outline_loader.py
+        op: create
+        content: |
+          from pathlib import Path
+          from typing import Optional
+          import yaml
+          from .outline_models import Outline
+
+
+          def load_outline(path: Path) -> Outline:
+            """Load and validate an outline YAML file."""
+            if not path.exists():
+              raise FileNotFoundError(f"Outline file not found: {path}")
+
+            with path.open("r", encoding="utf-8") as f:
+              data = yaml.safe_load(f)
+
+            if not data:
+              raise ValueError(f"Outline file is empty: {path}")
+
+            return Outline(**data)
+
+
+          def load_outline_safe(path: Optional[Path]) -> Optional[Outline]:
+            """Load outline with error handling; returns None on failure."""
+            if not path:
+              return None
+            try:
+              return load_outline(path)
+            except Exception:  # noqa: BLE001
+              return None
+
+  - id: integrate_outline_into_runner
+    description: >
+      Modify run_tasks.py to load outlines and inject context into task prompts.
+    files:
+      - path: src/simple_rag_writer/runner/run_tasks.py
+        changes:
+          - location: "run_single_task function"
+            description: "Add outline loading before prompt building"
+            implementation: |
+              # After loading TaskSpec, check for context.outline_path
+              outline_context = None
+              if task.context and task.context.outline_path:
+                from pathlib import Path
+                from simple_rag_writer.tasks.outline_loader import load_outline_safe
+
+                outline_path = Path(task.context.outline_path)
+                outline = load_outline_safe(outline_path)
+                if outline:
+                  # Use task.context.outline_id or fallback to task.id
+                  section_id = task.context.outline_id or task.id
+                  outline_context = outline.get_context_for_section(section_id)
+
+                  if not outline_context:
+                    console.print(
+                      f"[yellow]Warning: Section {section_id} not found in outline {outline_path}[/yellow]"
+                    )
+
+              # Pass outline_context to build_task_prompt
+              prompt = build_task_prompt(
+                task=task,
+                reference_blobs=reference_blobs,
+                outline_context=outline_context,  # New parameter
+              )
+
+  - id: update_task_prompt_builder
+    description: >
+      Modify build_task_prompt to accept and render outline context.
+    files:
+      - path: src/simple_rag_writer/prompts/task_prompt.py
+        changes:
+          - location: "build_task_prompt function signature"
+            before: |
+              def build_task_prompt(
+                task: TaskSpec,
+                reference_blobs: Optional[List[str]] = None,
+              ) -> str:
+            after: |
+              def build_task_prompt(
+                task: TaskSpec,
+                reference_blobs: Optional[List[str]] = None,
+                outline_context: Optional[dict] = None,
+              ) -> str:
+
+          - location: "prompt construction"
+            description: "Add outline context section between task description and references"
+            implementation: |
+              sections = [task_header]
+
+              if task.description:
+                sections.append(f"**Description:**\n{task.description.strip()}")
+
+              # NEW: Add outline context if available
+              if outline_context:
+                context_parts = []
+
+                # Part info
+                if outline_context.get("part"):
+                  part = outline_context["part"]
+                  context_parts.append(
+                    f"**Part:** {part['title']}"
+                    + (f" — {part['summary']}" if part.get('summary') else "")
+                  )
+
+                # Section info
+                if outline_context.get("section"):
+                  sec = outline_context["section"]
+                  context_parts.append(f"**Section Summary:** {sec['summary']}")
+
+                # Navigation context
+                if outline_context.get("previous_section"):
+                  prev = outline_context["previous_section"]
+                  context_parts.append(f"**Previous:** {prev['title']}")
+
+                if outline_context.get("next_section"):
+                  nxt = outline_context["next_section"]
+                  context_parts.append(f"**Next:** {nxt['title']}")
+
+                # Sibling context (brief list)
+                if outline_context.get("sibling_sections"):
+                  siblings = outline_context["sibling_sections"]
+                  sibling_list = "\n".join(
+                    f"  - {s['title']}: {s['summary']}" for s in siblings
+                  )
+                  context_parts.append(f"**Chapter Structure:**\n{sibling_list}")
+
+                if context_parts:
+                  sections.append("## Outline Context\n" + "\n\n".join(context_parts))
+
+              if reference_blobs:
+                # ... existing reference rendering ...
+
+              # ... rest of prompt building ...
+
+  - id: add_outline_validation
+    description: >
+      Add validation to ensure outline_id exists when outline_path is specified.
+    files:
+      - path: src/simple_rag_writer/tasks/models.py
+        changes:
+          - location: "ContextSpec model"
+            add_validator: |
+              from pydantic import model_validator
+
+              @model_validator(mode='after')
+              def validate_outline_consistency(self) -> 'ContextSpec':
+                if self.outline_path and not self.outline_id:
+                  # This is just a warning; outline_id can default to task.id
+                  pass
+                return self
+
+  - id: add_outline_example
+    description: >
+      Create example outline file and task demonstrating the feature.
+    files:
+      - path: examples/book_outline.yaml
+        op: create
+        content: |
+          id: "example-memoir"
+          title: "My Story: A Memoir"
+          parts:
+            - id: "part1"
+              title: "Early Days"
+              summary: "Childhood and formative experiences"
+              sections:
+                - id: "ch01"
+                  title: "The Beginning"
+                  summary: "First memories and family background"
+                - id: "ch02"
+                  title: "School Years"
+                  summary: "Education and early friendships"
+
+            - id: "part2"
+              title: "The Turning Point"
+              summary: "Major life changes and challenges"
+              sections:
+                - id: "ch03"
+                  title: "The Decision"
+                  summary: "A choice that changed everything"
+                - id: "ch04"
+                  title: "Consequences"
+                  summary: "Living with the aftermath"
+
+      - path: examples/chapter_task.yaml
+        op: create
+        content: |
+          id: "ch03"
+          title: "Chapter 3: The Decision"
+          description: |
+            Write a compelling narrative chapter focusing on the pivotal moment
+            of decision. Include:
+            - Emotional context and stakes
+            - Internal dialogue
+            - Scene setting
+            - Foreshadowing of consequences
+
+          context:
+            outline_path: "examples/book_outline.yaml"
+            outline_id: "ch03"
+
+          output: "drafts/chapter_03.md"
+          style: "memoir"
+
+artifacts:
+  - src/simple_rag_writer/tasks/outline_models.py (new)
+  - src/simple_rag_writer/tasks/outline_loader.py (new)
+  - src/simple_rag_writer/runner/run_tasks.py (modified)
+  - src/simple_rag_writer/prompts/task_prompt.py (modified)
+  - src/simple_rag_writer/tasks/models.py (modified)
+  - examples/book_outline.yaml (new)
+  - examples/chapter_task.yaml (new)
+
+testing:
+  unit_tests:
+    - Test Outline.find_section with nested structures
+    - Test get_context_for_section with various positions (first, middle, last)
+    - Test outline loading with valid and invalid YAML
+    - Test context injection into task prompts
+
+  integration_tests:
+    - Load example outline and generate chapter with context
+    - Verify sibling navigation (previous/next) in prompt
+    - Test with missing outline file (graceful degradation)
+    - Test with outline_id not found in outline
+
+  manual_tests:
+    - Create a 3-chapter book outline
+    - Write all 3 chapters using tasks with outline context
+    - Verify each chapter references its neighbors appropriately
+
+success_criteria:
+  - Writers can define multi-part book outlines in YAML
+  - Task prompts automatically include structural context
+  - Context includes part summary, chapter summaries, and navigation
+  - Missing or invalid outlines degrade gracefully with warnings
+  - Example files demonstrate the feature clearly
+
+notes: >
+  This feature is essential for long-form writing where maintaining narrative
+  coherence across chapters is critical. The outline serves as both a planning
+  document and a dynamic context injection system that helps the LLM understand
+  where each piece fits in the larger work.
